@@ -1,4 +1,8 @@
--- Editable control examples used by TargetHunterClient's Controls tab.
+-- Standalone tabbed Roblox UI library with reusable controls and local styling.
+-- API: HipoControls.new({Title = "...", Size = Vector2.new(...), ...})
+-- Run from a LocalScript; a PlayerGui parent is created when Parent is omitted.
+local styleContexts = setmetatable({}, {__mode = "k"})
+
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local StarterGui = game:GetService("StarterGui")
@@ -15,7 +19,7 @@ local LucideIcons = (function()
 -- Permission to use, copy, modify, and/or distribute this software for any
 -- purpose with or without fee is hereby granted, provided that the above
 -- copyright notice and this permission notice appear in all copies.
---	
+--
 -- THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
 -- WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
 -- MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -2008,6 +2012,7 @@ function LucideIcons.Create(parent, iconName, options)
     image.ImageColor3 = options.Color or Color3.fromRGB(190, 220, 35)
     if image:IsA("ImageButton") then image.AutoButtonColor = false end
     image.Parent = parent
+    styleContexts[image] = styleContexts[parent]
     if not LucideIcons.Set(image, iconName, options.Color) then
         image:Destroy()
         warn("[LucideIcons] Icon not found: " .. tostring(iconName))
@@ -2040,6 +2045,16 @@ local ControlsOverview = {
         control = Color3.fromRGB(39, 40, 42),
         hover = Color3.fromRGB(57, 59, 61),
         danger = Color3.fromRGB(235, 83, 91),
+        accentText = Color3.fromRGB(24, 25, 27),
+        accentHighlight = Color3.fromRGB(255, 255, 255),
+        toggleKnob = Color3.fromRGB(235, 236, 237),
+        pickerSurface = Color3.fromRGB(38, 39, 41),
+        pickerSelector = Color3.fromRGB(245, 245, 245),
+        pickerSelectorLine = Color3.fromRGB(20, 21, 22),
+        pickerValueLight = Color3.fromRGB(255, 255, 255),
+        pickerValueDark = Color3.fromRGB(0, 0, 0),
+        pickerValueMarker = Color3.fromRGB(238, 239, 240),
+        pickerValueLine = Color3.fromRGB(30, 31, 33),
     },
     Examples = {
         {Type = "Button", Label = "Button", Description = "Run a sample action.", Text = "Click me", Notify = true, Icon = "circle-play"},
@@ -2056,6 +2071,247 @@ local ControlsOverview = {
 
 local themeRefreshers = {}
 
+local DEFAULT_METRICS = {
+    Scale = 1,
+    HeaderHeight = 42,
+    NavWidth = 154,
+    SectionTabHeight = 36,
+    ContentPadding = 14,
+    RowHeight = 44,
+    DescriptionRowHeight = 58,
+    SectionHeaderHeight = 36,
+    SectionTitleHeight = 34,
+    SectionGap = 8,
+    ControlGap = 0,
+    ScrollBarThickness = 4,
+    CornerScale = 1,
+    ToastWidth = 272,
+    ToastHeight = 50,
+    ToastGap = 8,
+    ToastDuration = 2,
+    ToastLimit = 3,
+}
+
+local METRIC_MAXIMUMS = {
+    Scale = 4,
+    HeaderHeight = 100,
+    NavWidth = 320,
+    SectionTabHeight = 100,
+    ContentPadding = 64,
+    RowHeight = 240,
+    DescriptionRowHeight = 300,
+    SectionHeaderHeight = 160,
+    SectionTitleHeight = 120,
+    SectionGap = 100,
+    ControlGap = 100,
+    ScrollBarThickness = 24,
+    CornerScale = 4,
+    ToastWidth = 600,
+    ToastHeight = 160,
+    ToastGap = 64,
+    ToastDuration = 60,
+    ToastLimit = 10,
+}
+
+local DEFAULT_TYPOGRAPHY = {
+    Body = Enum.Font.Gotham,
+    Medium = Enum.Font.GothamMedium,
+    Heading = Enum.Font.GothamSemibold,
+    Code = Enum.Font.Code,
+    Scale = 1,
+}
+
+local DEFAULT_ANIMATION = {
+    DurationScale = 1,
+}
+
+local ANIMATION_OPTIONS = {
+    DurationScale = true,
+    EasingStyle = true,
+    EasingDirection = true,
+}
+
+local THEME_ROLE_FALLBACKS = {
+    accentText = "card",
+    accentHighlight = "text",
+    toggleKnob = "text",
+    pickerSurface = "control",
+    pickerSelector = "text",
+    pickerSelectorLine = "line",
+    pickerValueLight = "text",
+    pickerValueDark = "card",
+    pickerValueMarker = "text",
+    pickerValueLine = "line",
+}
+
+local function copyTable(source)
+    local copy = {}
+    for key, value in pairs(source or {}) do copy[key] = value end
+    return copy
+end
+
+local function copyOptions(base, overrides)
+    local result = copyTable(base)
+    for key, value in pairs(overrides or {}) do
+        if value ~= nil then result[key] = value end
+    end
+    return result
+end
+
+local function assertKnownOptions(options, defaults, label)
+    for key in pairs(options or {}) do
+        assert(defaults[key] ~= nil, label .. " option '" .. tostring(key) .. "' is not supported")
+    end
+end
+
+local function mergeTheme(baseTheme, overrides)
+    local theme = copyTable(baseTheme or ControlsOverview.Theme)
+    if overrides == nil then return baseTheme or ControlsOverview.Theme end
+    assert(type(overrides) == "table", "Theme must be a table of Color3 values")
+    for role, color in pairs(overrides) do
+        assert(type(role) == "string", "Theme role names must be strings")
+        assert(typeof(color) == "Color3", "Theme role '" .. role .. "' must be a Color3")
+        theme[role] = color
+    end
+    return theme
+end
+
+local function mergeMetrics(baseMetrics, overrides)
+    local metrics = copyOptions(DEFAULT_METRICS, baseMetrics)
+    if overrides == nil then return metrics end
+    assert(type(overrides) == "table", "Metrics must be a table")
+    assertKnownOptions(overrides, DEFAULT_METRICS, "Metrics")
+    for key, defaultValue in pairs(DEFAULT_METRICS) do
+        local value = overrides[key]
+        if value ~= nil then
+            assert(type(value) == "number" and value == value, "Metric '" .. key .. "' must be a number")
+            local canBeZero = key == "SectionGap" or key == "ControlGap"
+                or key == "ScrollBarThickness" or key == "CornerScale"
+            assert((canBeZero and value >= 0 or value > 0) and value <= METRIC_MAXIMUMS[key],
+                "Metric '" .. key .. "' is outside its valid range")
+            metrics[key] = value
+        elseif metrics[key] == nil then
+            metrics[key] = defaultValue
+        end
+    end
+    assert(metrics.ToastLimit == math.floor(metrics.ToastLimit) and metrics.ToastLimit >= 1,
+        "Metric 'ToastLimit' must be a positive integer")
+    return metrics
+end
+
+local function isFont(value)
+    return typeof(value) == "EnumItem" and value.EnumType == Enum.Font
+end
+
+local function mergeTypography(baseTypography, overrides)
+    local typography = copyOptions(DEFAULT_TYPOGRAPHY, baseTypography)
+    if overrides == nil then return typography end
+    assert(type(overrides) == "table", "Typography must be a table")
+    assertKnownOptions(overrides, DEFAULT_TYPOGRAPHY, "Typography")
+    for _, role in ipairs({"Body", "Medium", "Heading", "Code"}) do
+        if overrides[role] ~= nil then
+            assert(isFont(overrides[role]), "Typography." .. role .. " must be an Enum.Font value")
+            typography[role] = overrides[role]
+        end
+    end
+    if overrides.Scale ~= nil then
+        assert(type(overrides.Scale) == "number" and overrides.Scale > 0 and overrides.Scale <= 4,
+            "Typography.Scale must be greater than 0 and at most 4")
+        typography.Scale = overrides.Scale
+    end
+    return typography
+end
+
+local function mergeAnimation(baseAnimation, overrides)
+    local animation = copyOptions(DEFAULT_ANIMATION, baseAnimation)
+    if overrides == nil then return animation end
+    assert(type(overrides) == "table", "Animation must be a table")
+    assertKnownOptions(overrides, ANIMATION_OPTIONS, "Animation")
+    if overrides.DurationScale ~= nil then
+        assert(type(overrides.DurationScale) == "number" and overrides.DurationScale > 0 and overrides.DurationScale <= 10,
+            "Animation.DurationScale must be greater than 0 and at most 10")
+        animation.DurationScale = overrides.DurationScale
+    end
+    if overrides.EasingStyle ~= nil then
+        assert(typeof(overrides.EasingStyle) == "EnumItem" and overrides.EasingStyle.EnumType == Enum.EasingStyle,
+            "Animation.EasingStyle must be an Enum.EasingStyle value")
+        animation.EasingStyle = overrides.EasingStyle
+    end
+    if overrides.EasingDirection ~= nil then
+        assert(typeof(overrides.EasingDirection) == "EnumItem" and overrides.EasingDirection.EnumType == Enum.EasingDirection,
+            "Animation.EasingDirection must be an Enum.EasingDirection value")
+        animation.EasingDirection = overrides.EasingDirection
+    end
+    return animation
+end
+
+local function resolveStyleContext(parentContext, options)
+    options = type(options) == "table" and options or {}
+    local baseTheme = parentContext and parentContext.Theme or ControlsOverview.Theme
+    local context = {
+        Theme = mergeTheme(baseTheme, options.Theme),
+        Metrics = mergeMetrics(parentContext and parentContext.Metrics, options.Metrics),
+        Typography = mergeTypography(parentContext and parentContext.Typography, options.Typography),
+        Animation = mergeAnimation(parentContext and parentContext.Animation, options.Animation),
+    }
+    return context
+end
+
+local function applyScale(object, context, parentContext)
+    local targetScale = context and context.Metrics and context.Metrics.Scale or 1
+    local parentScale = parentContext and parentContext.Metrics and parentContext.Metrics.Scale or 1
+    if math.abs(targetScale - parentScale) > 0.001 then
+        local scale = targetScale / parentScale
+        local modifier = Instance.new("UIScale")
+        modifier.Scale = scale
+        modifier.Parent = object
+        styleContexts[modifier] = context
+    end
+end
+
+local function getStyledProperties(className, properties, context)
+    local styled = copyTable(properties)
+    if not context then return styled end
+    local metrics = context.Metrics
+    if className == "Frame" and type(styled.Name) == "string"
+        and string.match(styled.Name, "Row$") and typeof(styled.Size) == "UDim2" then
+        local originalHeight = styled.Size.Y.Offset
+        local targetHeight = originalHeight >= DEFAULT_METRICS.DescriptionRowHeight
+            and metrics.DescriptionRowHeight or metrics.RowHeight
+        styled.Size = UDim2.new(styled.Size.X.Scale, styled.Size.X.Offset, styled.Size.Y.Scale, targetHeight)
+    end
+    if className == "TextLabel" or className == "TextButton" or className == "TextBox" then
+        local typography = context.Typography
+        if styled.Font == Enum.Font.Gotham then
+            styled.Font = typography.Body
+        elseif styled.Font == Enum.Font.GothamMedium then
+            styled.Font = typography.Medium
+        elseif styled.Font == Enum.Font.GothamSemibold then
+            styled.Font = typography.Heading
+        elseif styled.Font == Enum.Font.Code then
+            styled.Font = typography.Code
+        end
+        if type(styled.TextSize) == "number" then
+            styled.TextSize = math.max(1, math.floor(styled.TextSize * typography.Scale + 0.5))
+        end
+    end
+    return styled
+end
+
+local function styledTweenInfo(object, duration, fallbackStyle, fallbackDirection)
+    local context = styleContexts[object]
+    local animation = context and context.Animation or DEFAULT_ANIMATION
+    return TweenInfo.new(
+        duration * animation.DurationScale,
+        animation.EasingStyle or fallbackStyle,
+        animation.EasingDirection or fallbackDirection
+    )
+end
+
+local function resolveControlContext(section, config)
+    return resolveStyleContext(section.Context, config)
+end
+
 function ControlsOverview.SetThemePalette(palette, paletteRoles)
     assert(type(palette) == "table", "SetThemePalette expects a palette table")
     paletteRoles = paletteRoles or {}
@@ -2063,6 +2319,9 @@ function ControlsOverview.SetThemePalette(palette, paletteRoles)
     for themeRole in pairs(ControlsOverview.Theme) do
         local paletteRole = paletteRoles[themeRole] or themeRole
         local color = palette[paletteRole]
+        if typeof(color) ~= "Color3" and THEME_ROLE_FALLBACKS[themeRole] then
+            color = palette[THEME_ROLE_FALLBACKS[themeRole]]
+        end
         if typeof(color) == "Color3" then
             ControlsOverview.Theme[themeRole] = color
         end
@@ -2077,27 +2336,31 @@ function ControlsOverview.SetThemePalette(palette, paletteRoles)
     end
 end
 
-local function create(className, parent, properties)
+local function create(className, parent, properties, context)
+    context = context or styleContexts[parent]
     local object = Instance.new(className)
-    for key, value in pairs(properties or {}) do object[key] = value end
+    local styledProperties = getStyledProperties(className, properties, context)
+    for key, value in pairs(styledProperties) do object[key] = value end
     object.Parent = parent
+    if context then styleContexts[object] = context end
     return object
 end
 
 local function round(object, radius)
-    create("UICorner", object, {CornerRadius = UDim.new(0, radius or 8)})
+    local context = styleContexts[object]
+    local cornerScale = context and context.Metrics.CornerScale or 1
+    create("UICorner", object, {CornerRadius = UDim.new(0, (radius or 8) * cornerScale)})
 end
 
 local function tween(object, properties)
-    local motion = TweenService:Create(object, TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), properties)
+    local motion = TweenService:Create(object, styledTweenInfo(object, 0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), properties)
     motion:Play()
 end
 
 local notificationSequence = 0
-local NOTIFICATION_ENTER_TWEEN = TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-local NOTIFICATION_EXIT_TWEEN = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 
 local function showControlNotification(parent, title, message, theme, accentColor)
+    local context = styleContexts[parent]
     local screenGui = parent
     while screenGui and not screenGui:IsA("ScreenGui") do
         screenGui = screenGui.Parent
@@ -2112,7 +2375,7 @@ local function showControlNotification(parent, title, message, theme, accentColo
             StarterGui:SetCore("SendNotification", {
                 Title = title,
                 Text = message,
-                Duration = 2,
+                Duration = context and context.Metrics.ToastDuration or 2,
             })
         end)
         return
@@ -2124,25 +2387,26 @@ local function showControlNotification(parent, title, message, theme, accentColo
             Name = "ControlsNotificationHost",
             AnchorPoint = Vector2.new(1, 0),
             Position = UDim2.new(1, -16, 0, 16),
-            Size = UDim2.fromOffset(272, 0),
+            Size = UDim2.fromOffset(context and context.Metrics.ToastWidth or 272, 0),
             AutomaticSize = Enum.AutomaticSize.Y,
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
             ZIndex = 50,
-        })
+        }, context)
         create("UIListLayout", host, {
-            Padding = UDim.new(0, 8),
+            Padding = UDim.new(0, context and context.Metrics.ToastGap or 8),
             SortOrder = Enum.SortOrder.LayoutOrder,
             HorizontalAlignment = Enum.HorizontalAlignment.Right,
             VerticalAlignment = Enum.VerticalAlignment.Top,
         })
     end
+    if context then styleContexts[host] = context end
 
     notificationSequence += 1
     local toastItem = create("Frame", host, {
         Name = "ControlNotificationItem",
         LayoutOrder = notificationSequence,
-        Size = UDim2.fromOffset(272, 50),
+        Size = UDim2.fromOffset(context and context.Metrics.ToastWidth or 272, context and context.Metrics.ToastHeight or 50),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
     })
@@ -2194,11 +2458,11 @@ local function showControlNotification(parent, title, message, theme, accentColo
         ZIndex = 52,
     })
     local scale = create("UIScale", toast, {Scale = 0.96})
-    TweenService:Create(toast, NOTIFICATION_ENTER_TWEEN, {
+    TweenService:Create(toast, styledTweenInfo(toast, 0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
         GroupTransparency = 0,
         Position = UDim2.fromOffset(0, 0),
     }):Play()
-    TweenService:Create(scale, NOTIFICATION_ENTER_TWEEN, {Scale = 1}):Play()
+    TweenService:Create(scale, styledTweenInfo(scale, 0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Scale = 1}):Play()
 
     local visibleToastItems = {}
     for _, child in ipairs(host:GetChildren()) do
@@ -2207,18 +2471,19 @@ local function showControlNotification(parent, title, message, theme, accentColo
         end
     end
     table.sort(visibleToastItems, function(a, b) return a.LayoutOrder < b.LayoutOrder end)
-    while #visibleToastItems > 3 do
+    local toastLimit = context and context.Metrics.ToastLimit or 3
+    while #visibleToastItems > toastLimit do
         local oldestToast = table.remove(visibleToastItems, 1)
         oldestToast:Destroy()
     end
 
-    task.delay(2, function()
+    task.delay(context and context.Metrics.ToastDuration or 2, function()
         if not toastItem.Parent then return end
-        local exitTween = TweenService:Create(toast, NOTIFICATION_EXIT_TWEEN, {
+        local exitTween = TweenService:Create(toast, styledTweenInfo(toast, 0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
             GroupTransparency = 1,
             Position = UDim2.fromOffset(14, 0),
         })
-        local shrinkTween = TweenService:Create(scale, NOTIFICATION_EXIT_TWEEN, {Scale = 0.96})
+        local shrinkTween = TweenService:Create(scale, styledTweenInfo(scale, 0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Scale = 0.96})
         exitTween.Completed:Connect(function(playbackState)
             if playbackState == Enum.PlaybackState.Completed and toastItem.Parent then
                 toastItem:Destroy()
@@ -2230,7 +2495,8 @@ local function showControlNotification(parent, title, message, theme, accentColo
 end
 
 local function makeButton(parent, text, width, bindHover)
-    local theme = ControlsOverview.Theme
+    local context = styleContexts[parent]
+    local theme = context and context.Theme or ControlsOverview.Theme
     local button = create("TextButton", parent, {
         AnchorPoint = Vector2.new(1, 0.5),
         Position = UDim2.new(1, -12, 0.5, 0),
@@ -2291,16 +2557,19 @@ end
 function ControlsOverview:CreateSection(parent, title, options)
     assert(typeof(parent) == "Instance", "CreateSection expects a parent Instance")
     options = type(options) == "table" and options or {}
+    local parentContext = styleContexts[parent]
+    local context = resolveStyleContext(parentContext, options)
     local iconName = options.Icon
     local hasIcon = type(iconName) == "string" and LucideIcons.Has(iconName)
-    local theme = self.Theme or ControlsOverview.Theme
+    local theme = context.Theme
     local card = create("Frame", parent, {
         Name = (title or "Section") .. "Section",
         Size = UDim2.new(1, -12, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
         BackgroundColor3 = theme.card,
         BorderSizePixel = 0,
-    })
+    }, context)
+    applyScale(card, context, parentContext)
     round(card, 12)
     create("UIStroke", card, {Color = theme.line, Transparency = 0.4, Thickness = 1})
     create("UIListLayout", card, {
@@ -2312,7 +2581,7 @@ function ControlsOverview:CreateSection(parent, title, options)
         Name = "SectionTitle",
         LayoutOrder = 0,
         Position = UDim2.fromOffset(hasIcon and 28 or 0, 0),
-        Size = UDim2.new(1, hasIcon and -52 or -24, 0, 36),
+        Size = UDim2.new(1, hasIcon and -52 or -24, 0, context.Metrics.SectionHeaderHeight),
         BackgroundTransparency = 1,
         Text = title or "Section",
         TextColor3 = theme.text,
@@ -2337,10 +2606,10 @@ function ControlsOverview:CreateSection(parent, title, options)
         BackgroundTransparency = 1,
     })
     create("UIListLayout", content, {
-        Padding = UDim.new(0, 0),
+        Padding = UDim.new(0, context.Metrics.ControlGap),
         SortOrder = Enum.SortOrder.LayoutOrder,
     })
-    return setmetatable({Frame = card, Content = content, Theme = theme, Icon = iconName, _layoutOrder = 0}, SectionMethods)
+    return setmetatable({Frame = card, Content = content, Theme = theme, Context = context, Icon = iconName, _layoutOrder = 0}, SectionMethods)
 end
 
 function ControlsOverview:Section(parent, title, options)
@@ -2350,62 +2619,499 @@ end
 local WindowMethods = {}
 WindowMethods.__index = WindowMethods
 
--- Creates a Studio-safe controls window inside an existing GuiObject.
-function ControlsOverview.new(parent, options)
-    assert(typeof(parent) == "Instance", "ControlsOverview.new expects a parent GuiObject")
-    options = type(options) == "table" and options or {}
-    local theme = ControlsOverview.Theme
-    local root = create("ScrollingFrame", parent, {
-        Name = options.Name or "ControlsLibrary",
+-- Theme roles accept Color3 overrides. Metrics also control window geometry,
+-- row heights, spacing, scrollbars, corners, and notifications. Typography
+-- accepts Body, Medium, Heading, Code, and Scale; Animation accepts duration
+-- and easing overrides. Pass options to new, Section, or an individual control.
+-- Both Ember-style ControlsOverview.new(options) and new(parent, options) work.
+local function findScreenGui(instance)
+    while instance do
+        if instance:IsA("ScreenGui") then return instance end
+        instance = instance.Parent
+    end
+    return nil
+end
+
+local function toWindowSize(value)
+    if typeof(value) == "UDim2" then return value end
+    if typeof(value) == "Vector2" then return UDim2.fromOffset(value.X, value.Y) end
+    return UDim2.fromOffset(700, 452)
+end
+
+-- Creates a standalone tabbed window. In a LocalScript, Parent may be omitted
+-- to create a ScreenGui in the local player's PlayerGui.
+function ControlsOverview.new(parentOrOptions, suppliedOptions)
+    local parent, options
+    if typeof(parentOrOptions) == "Instance" then
+        parent = parentOrOptions
+        options = type(suppliedOptions) == "table" and suppliedOptions or {}
+    else
+        options = type(parentOrOptions) == "table" and parentOrOptions or {}
+        parent = options.Parent
+    end
+
+    local localPlayer = Players.LocalPlayer
+    if not parent then
+        if parentOrOptions == nil and type(suppliedOptions) == "table" then
+            options = suppliedOptions
+            parent = options.Parent
+        end
+        assert(localPlayer, "ControlsOverview.new(options) must run on the client or receive options.Parent")
+        parent = parent or localPlayer:WaitForChild("PlayerGui")
+    end
+    assert(typeof(parent) == "Instance", "ControlsOverview.new expects a GuiObject, ScreenGui, PlayerGui, or options table")
+
+    local parentContext = styleContexts[parent]
+    local context = resolveStyleContext(parentContext, options)
+    local theme = context.Theme
+    local screenGui
+    local ownsScreenGui = false
+    if parent:IsA("PlayerGui") then
+        screenGui = Instance.new("ScreenGui")
+        screenGui.Name = options.ScreenGuiName or "HipoControlsGui"
+        screenGui.ResetOnSpawn = false
+        screenGui.IgnoreGuiInset = options.IgnoreGuiInset ~= false
+        screenGui.DisplayOrder = type(options.DisplayOrder) == "number" and options.DisplayOrder or 1000
+        screenGui.Parent = parent
+        ownsScreenGui = true
+        parent = screenGui
+        parentContext = nil
+    elseif parent:IsA("ScreenGui") then
+        screenGui = parent
+    elseif parent:IsA("GuiObject") then
+        screenGui = findScreenGui(parent)
+    else
+        error("ControlsOverview.new parent must be a PlayerGui, ScreenGui, or GuiObject", 2)
+    end
+
+    local root = create("Frame", parent, {
+        Name = options.Name or "HipoControlsWindow",
+        Size = toWindowSize(options.Size),
+        Position = typeof(options.Position) == "UDim2" and options.Position or UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = typeof(options.AnchorPoint) == "Vector2" and options.AnchorPoint or Vector2.new(0.5, 0.5),
+        BackgroundColor3 = theme.card,
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+    }, context)
+    applyScale(root, context, parentContext)
+    round(root, 12)
+    create("UIStroke", root, {Color = theme.line, Transparency = 0.2, Thickness = 1})
+
+    local header = create("Frame", root, {
+        Name = "WindowHeader",
+        Size = UDim2.new(1, 0, 0, context.Metrics.HeaderHeight),
+        BackgroundColor3 = theme.card,
+        BorderSizePixel = 0,
+        Active = true,
+    })
+    create("TextLabel", header, {
+        Name = "WindowTitle",
+        Position = UDim2.fromOffset(16, 0),
+        Size = UDim2.new(0.65, -16, 1, 0),
+        BackgroundTransparency = 1,
+        Text = type(options.Title) == "string" and options.Title or "HipoControls",
+        TextColor3 = theme.text,
+        Font = Enum.Font.GothamSemibold,
+        TextSize = 15,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+    })
+    if type(options.Subtitle) == "string" and options.Subtitle ~= "" then
+        create("TextLabel", header, {
+            Name = "WindowSubtitle",
+            AnchorPoint = Vector2.new(1, 0),
+            Position = UDim2.new(1, -48, 0, 0),
+            Size = UDim2.new(0.3, -10, 1, 0),
+            BackgroundTransparency = 1,
+            Text = options.Subtitle,
+            TextColor3 = theme.muted,
+            Font = Enum.Font.Gotham,
+            TextSize = 11,
+            TextXAlignment = Enum.TextXAlignment.Right,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+        })
+    end
+    create("Frame", header, {
+        Name = "HeaderDivider",
+        AnchorPoint = Vector2.new(0, 1),
+        Position = UDim2.new(0, 0, 1, 0),
+        Size = UDim2.new(1, 0, 0, 1),
+        BackgroundColor3 = theme.line,
+        BorderSizePixel = 0,
+    })
+    local closeButton = create("TextButton", header, {
+        Name = "CloseButton",
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, -12, 0.5, 0),
+        Size = UDim2.fromOffset(26, 26),
+        BackgroundColor3 = theme.control,
+        BorderSizePixel = 0,
+        Text = "×",
+        TextColor3 = theme.muted,
+        Font = Enum.Font.GothamMedium,
+        TextSize = 18,
+        AutoButtonColor = false,
+    })
+    round(closeButton, 7)
+
+    local body = create("Frame", root, {
+        Name = "WindowBody",
+        Position = UDim2.new(0, 0, 0, context.Metrics.HeaderHeight),
+        Size = UDim2.new(1, 0, 1, -context.Metrics.HeaderHeight),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+    })
+    local navigation = create("ScrollingFrame", body, {
+        Name = "Navigation",
+        Size = UDim2.new(0, context.Metrics.NavWidth, 1, 0),
+        BackgroundColor3 = theme.control,
+        BorderSizePixel = 0,
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ScrollingDirection = Enum.ScrollingDirection.Y,
+        ScrollBarThickness = context.Metrics.ScrollBarThickness,
+        ScrollBarImageColor3 = theme.lime,
+        Active = true,
+    })
+    create("UIPadding", navigation, {
+        PaddingTop = UDim.new(0, 10),
+        PaddingBottom = UDim.new(0, 10),
+        PaddingLeft = UDim.new(0, 8),
+        PaddingRight = UDim.new(0, 8),
+    })
+    create("UIListLayout", navigation, {
+        Padding = UDim.new(0, 5),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+    })
+    local content = create("Frame", body, {
+        Name = "SectionPages",
+        Position = UDim2.new(0, context.Metrics.NavWidth, 0, 0),
+        Size = UDim2.new(1, -context.Metrics.NavWidth, 1, 0),
+        BackgroundColor3 = theme.card,
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+    })
+
+    local window = setmetatable({
+        Frame = root,
+        Root = root,
+        Gui = screenGui,
+        OwnsScreenGui = ownsScreenGui,
+        Header = header,
+        Navigation = navigation,
+        Content = content,
+        Sections = {},
+        ActiveSection = nil,
+        Title = options.Title or "HipoControls",
+        Subtitle = options.Subtitle,
+        Theme = theme,
+        Context = context,
+        Keybind = options.Keybind == nil and Enum.KeyCode.RightControl or options.Keybind,
+        Connections = {},
+    }, WindowMethods)
+
+    local function selectSection(selected)
+        window.ActiveSection = selected
+        for _, section in ipairs(window.Sections) do
+            local active = section == selected
+            section.Page.Visible = active
+            section.Tab.BackgroundTransparency = active and 0 or 1
+            section.Tab.BackgroundColor3 = active and theme.hover or theme.control
+            section.TabLabel.TextColor3 = active and theme.text or theme.muted
+            if section.TabAccent then section.TabAccent.BackgroundTransparency = active and 0 or 1 end
+            if section.TabIcon then section.TabIcon.ImageColor3 = active and theme.lime or theme.muted end
+        end
+    end
+    window._SelectSection = selectSection
+
+    table.insert(window.Connections, closeButton.Activated:Connect(function() window:Destroy() end))
+    table.insert(window.Connections, closeButton.MouseEnter:Connect(function()
+        tween(closeButton, {BackgroundColor3 = theme.hover, TextColor3 = theme.text})
+    end))
+    table.insert(window.Connections, closeButton.MouseLeave:Connect(function()
+        tween(closeButton, {BackgroundColor3 = theme.control, TextColor3 = theme.muted})
+    end))
+    if window.Keybind ~= false then
+        assert(typeof(window.Keybind) == "EnumItem" and window.Keybind.EnumType == Enum.KeyCode,
+            "Keybind must be an Enum.KeyCode or false")
+        table.insert(window.Connections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
+            if not gameProcessed and not UserInputService:GetFocusedTextBox() and input.KeyCode == window.Keybind then
+                window:Toggle()
+            end
+        end))
+    end
+
+    local dragging, dragStart, startPosition = false, nil, nil
+    table.insert(window.Connections, header.InputBegan:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        dragging = true
+        dragStart = input.Position
+        startPosition = root.Position
+        table.insert(window.Connections, input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end))
+    end))
+    table.insert(window.Connections, UserInputService.InputChanged:Connect(function(input)
+        if not dragging or (input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch) then return end
+        local delta = input.Position - dragStart
+        root.Position = UDim2.new(startPosition.X.Scale, startPosition.X.Offset + delta.X,
+            startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
+    end))
+
+    return window
+end
+
+function WindowMethods:Section(name, iconName, options)
+    if type(iconName) == "table" and options == nil then options, iconName = iconName, nil end
+    assert(type(name) == "string" and name ~= "", "Window:Section expects a section name")
+    local sectionOptions = copyTable(options)
+    if iconName and sectionOptions.Icon == nil then sectionOptions.Icon = iconName end
+    local context = resolveStyleContext(self.Context, sectionOptions)
+    local theme = self.Theme
+    local order = #self.Sections + 1
+    local page = create("ScrollingFrame", self.Content, {
+        Name = "SectionPage" .. order,
+        LayoutOrder = order,
         Size = UDim2.fromScale(1, 1),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         CanvasSize = UDim2.new(0, 0, 0, 0),
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
         ScrollingDirection = Enum.ScrollingDirection.Y,
-        ScrollBarThickness = 4,
-        ScrollBarImageColor3 = theme.lime,
+        ScrollBarThickness = context.Metrics.ScrollBarThickness,
+        ScrollBarImageColor3 = context.Theme.lime,
         Active = true,
+        Visible = false,
+    }, context)
+    applyScale(page, context, self.Context)
+    create("UIPadding", page, {
+        PaddingTop = UDim.new(0, context.Metrics.ContentPadding),
+        PaddingBottom = UDim.new(0, context.Metrics.ContentPadding),
+        PaddingLeft = UDim.new(0, context.Metrics.ContentPadding),
+        PaddingRight = UDim.new(0, context.Metrics.ContentPadding),
     })
-    create("UIListLayout", root, {Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder})
-    local window = setmetatable({Frame = root, Content = root, Sections = {}, Title = options.Title}, WindowMethods)
-    if type(options.Title) == "string" and options.Title ~= "" then
-        create("TextLabel", root, {
-            Name = "WindowTitle",
-            LayoutOrder = 0,
-            Size = UDim2.new(1, -12, 0, 34),
-            BackgroundTransparency = 1,
-            Text = options.Title,
-            TextColor3 = theme.text,
-            Font = Enum.Font.GothamSemibold,
-            TextSize = 16,
-            TextXAlignment = Enum.TextXAlignment.Left,
+    create("UIListLayout", page, {
+        Padding = UDim.new(0, context.Metrics.ControlGap),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+    })
+
+    local tab = create("TextButton", self.Navigation, {
+        Name = "SectionTab" .. order,
+        LayoutOrder = order,
+        Size = UDim2.new(1, -4, 0, context.Metrics.SectionTabHeight),
+        BackgroundColor3 = theme.control,
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Text = "",
+        AutoButtonColor = false,
+    }, self.Context)
+    round(tab, 7)
+    local validIcon = type(sectionOptions.Icon) == "string" and LucideIcons.Has(sectionOptions.Icon)
+    local tabIcon
+    if validIcon then
+        tabIcon = LucideIcons.Create(tab, sectionOptions.Icon, {
+            Name = "TabIcon",
+            Position = UDim2.fromOffset(10, 10),
+            Size = UDim2.fromOffset(16, 16),
+            Color = theme.muted,
         })
     end
-    return window
-end
+    local tabLabel = create("TextLabel", tab, {
+        Name = "TabLabel",
+        Position = UDim2.fromOffset(validIcon and 34 or 12, 0),
+        Size = UDim2.new(1, validIcon and -42 or -20, 1, 0),
+        BackgroundTransparency = 1,
+        Text = name,
+        TextColor3 = theme.muted,
+        Font = Enum.Font.GothamMedium,
+        TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+    })
+    local tabAccent = create("Frame", tab, {
+        Name = "ActiveAccent",
+        Position = UDim2.fromOffset(0, 7),
+        Size = UDim2.new(0, 3, 1, -14),
+        BackgroundColor3 = theme.lime,
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+    })
+    round(tabAccent, 2)
 
-function WindowMethods:Section(name, iconName, options)
-    if type(iconName) == "table" and options == nil then options, iconName = iconName, nil end
-    local sectionOptions = {}
-    for key, value in pairs(options or {}) do sectionOptions[key] = value end
-    if iconName and sectionOptions.Icon == nil then sectionOptions.Icon = iconName end
-    local section = ControlsOverview:CreateSection(self.Content, name, sectionOptions)
-    section.Window = self
-    section.Icon = sectionOptions.Icon
+    local section = setmetatable({
+        Frame = page,
+        Page = page,
+        Content = page,
+        Tab = tab,
+        TabLabel = tabLabel,
+        TabIcon = tabIcon,
+        TabAccent = tabAccent,
+        Theme = context.Theme,
+        Context = context,
+        Icon = sectionOptions.Icon,
+        Name = name,
+        Window = self,
+        _layoutOrder = 0,
+    }, SectionMethods)
     table.insert(self.Sections, section)
+    table.insert(self.Connections, tab.Activated:Connect(function() self._SelectSection(section) end))
+    if #self.Sections == 1 then self._SelectSection(section) end
     return section
 end
 
+function WindowMethods:AddTab(name, iconName, options)
+    return self:Section(name, iconName, options)
+end
+
+function WindowMethods:SetSize(size)
+    local newSize
+    if typeof(size) == "Vector2" then
+        newSize = UDim2.fromOffset(size.X, size.Y)
+    elseif typeof(size) == "UDim2" then
+        newSize = size
+    else
+        error("Window:SetSize expects a Vector2 or UDim2", 2)
+    end
+    self.Frame.Size = newSize
+    return newSize
+end
+
+WindowMethods.Resize = WindowMethods.SetSize
+
+function WindowMethods:SelectTab(tabOrName)
+    local selected = tabOrName
+    if type(tabOrName) == "string" then
+        selected = nil
+        for _, section in ipairs(self.Sections) do
+            if section.Name == tabOrName then
+                selected = section
+                break
+            end
+        end
+    end
+    if type(selected) ~= "table" or selected.Window ~= self then return false end
+    self._SelectSection(selected)
+    return true
+end
+
+function WindowMethods:SetVisible(visible)
+    if self.Frame and self.Frame.Parent then self.Frame.Visible = visible == true end
+    return self.Frame and self.Frame.Visible or false
+end
+
+function WindowMethods:Show()
+    return self:SetVisible(true)
+end
+
+function WindowMethods:Hide()
+    return self:SetVisible(false)
+end
+
+function WindowMethods:Toggle()
+    return self:SetVisible(not (self.Frame and self.Frame.Visible))
+end
+
+function WindowMethods:Notify(title, message, accentColor)
+    if not self.Frame or not self.Frame.Parent then return end
+    return showControlNotification(self.Frame, title, message, self.Theme, accentColor)
+end
+
 function WindowMethods:Destroy()
-    if self.Frame and self.Frame.Parent then self.Frame:Destroy() end
+    for _, connection in ipairs(self.Connections or {}) do
+        if connection.Connected then connection:Disconnect() end
+    end
+    self.Connections = {}
+    if self.OwnsScreenGui and self.Gui and self.Gui.Parent then
+        self.Gui:Destroy()
+    elseif self.Frame and self.Frame.Parent then
+        self.Frame:Destroy()
+    end
     self.Sections = {}
+    self.ActiveSection = nil
+end
+
+function SectionMethods:Title(config)
+    if type(config) == "string" then config = {Text = config} end
+    config = config or {}
+    assert(type(config) == "table", "Section:Title expects a string or config table")
+    local context = resolveControlContext(self, config)
+    local theme = context.Theme
+    local hasDescription = type(config.Description) == "string" and config.Description ~= ""
+    local hasIcon = type(config.Icon) == "string" and LucideIcons.Has(config.Icon)
+    self._layoutOrder = self._layoutOrder + 1
+    local height = context.Metrics.SectionTitleHeight + (hasDescription and 18 or 0)
+    local heading = create("Frame", self.Content, {
+        Name = "SectionHeading",
+        LayoutOrder = self._layoutOrder,
+        Size = UDim2.new(1, 0, 0, height),
+        BackgroundTransparency = 1,
+    }, context)
+    applyScale(heading, context, self.Context)
+    if hasIcon then
+        LucideIcons.Create(heading, config.Icon, {
+            Position = UDim2.fromOffset(0, hasDescription and 5 or math.max(0, (height - 16) / 2)),
+            Size = UDim2.fromOffset(16, 16),
+            Color = theme.lime,
+        })
+    end
+    create("TextLabel", heading, {
+        Name = "HeadingText",
+        Position = UDim2.fromOffset(hasIcon and 24 or 0, hasDescription and 1 or 0),
+        Size = UDim2.new(1, hasIcon and -24 or 0, 0, hasDescription and 20 or height),
+        BackgroundTransparency = 1,
+        Text = config.Text or "Section",
+        TextColor3 = theme.text,
+        Font = Enum.Font.GothamSemibold,
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Center,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+    })
+    if hasDescription then
+        create("TextLabel", heading, {
+            Name = "HeadingDescription",
+            Position = UDim2.fromOffset(hasIcon and 24 or 0, 22),
+            Size = UDim2.new(1, hasIcon and -24 or 0, 0, 16),
+            BackgroundTransparency = 1,
+            Text = config.Description,
+            TextColor3 = theme.muted,
+            Font = Enum.Font.Gotham,
+            TextSize = 10,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Center,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+        })
+    end
+    return heading
+end
+
+function SectionMethods:Separator(config)
+    config = type(config) == "table" and config or {}
+    local context = resolveControlContext(self, config)
+    self._layoutOrder = self._layoutOrder + 1
+    local spacer = create("Frame", self.Content, {
+        Name = "SectionSeparator",
+        LayoutOrder = self._layoutOrder,
+        Size = UDim2.new(1, 0, 0, type(config.Height) == "number" and math.max(1, config.Height) or 9),
+        BackgroundTransparency = 1,
+    }, context)
+    create("Frame", spacer, {
+        Name = "Divider",
+        AnchorPoint = Vector2.new(0, 0.5),
+        Position = UDim2.fromScale(0, 0.5),
+        Size = UDim2.new(1, 0, 0, 1),
+        BackgroundColor3 = context.Theme.line,
+        BackgroundTransparency = 0.3,
+        BorderSizePixel = 0,
+    })
+    return spacer
 end
 
 function SectionMethods:Toggle(config)
     config = config or {}
     assert(type(config) == "table", "Section:Toggle expects a config table")
-    local theme = self.Theme or ControlsOverview.Theme
+    local context = resolveControlContext(self, config)
+    local theme = context.Theme
     self._layoutOrder = self._layoutOrder + 1
 
     local hasDescription = type(config.Description) == "string" and config.Description ~= ""
@@ -2417,7 +3123,8 @@ function SectionMethods:Toggle(config)
         LayoutOrder = self._layoutOrder,
         Size = UDim2.new(1, 0, 0, hasDescription and 58 or 44),
         BackgroundTransparency = 1,
-    })
+    }, context)
+    applyScale(row, context, self.Context)
     create("TextLabel", row, {
         Position = hasDescription and UDim2.fromOffset(labelX, 6) or UDim2.fromOffset(labelX, 0),
         Size = hasDescription and UDim2.new(1, labelWidth, 0, 21) or UDim2.new(1, labelWidth, 1, 0),
@@ -2478,7 +3185,7 @@ function SectionMethods:Toggle(config)
     local knob = create("Frame", toggle, {
         Position = knobPosition(enabled, 14),
         Size = UDim2.fromOffset(14, 14),
-        BackgroundColor3 = enabled and theme.lime or Color3.fromRGB(235, 236, 237),
+        BackgroundColor3 = enabled and theme.lime or theme.toggleKnob,
         BorderSizePixel = 0,
     })
     round(knob, 7)
@@ -2492,7 +3199,7 @@ function SectionMethods:Toggle(config)
         tween(knob, {
             Position = knobPosition(enabled, knobSize),
             Size = UDim2.fromOffset(knobSize, knobSize),
-            BackgroundColor3 = enabled and theme.lime or Color3.fromRGB(235, 236, 237),
+            BackgroundColor3 = enabled and theme.lime or theme.toggleKnob,
         })
     end
     toggle.MouseEnter:Connect(function()
@@ -2530,7 +3237,9 @@ function SectionMethods:Toggle(config)
     return exposeSectionHandle(handle, config)
 end
 
-local function createSectionRow(section, text, controlWidth, name, description, iconName)
+local function createSectionRow(section, text, controlWidth, name, description, iconName, context)
+    context = context or section.Context or resolveStyleContext(nil, {})
+    local theme = context.Theme
     section._layoutOrder = section._layoutOrder + 1
     local hasDescription = type(description) == "string" and description ~= ""
     local hasIcon = type(iconName) == "string" and LucideIcons.Has(iconName)
@@ -2539,11 +3248,12 @@ local function createSectionRow(section, text, controlWidth, name, description, 
     local row = create("Frame", section.Content, {
         Name = (name or "Control") .. "Row", LayoutOrder = section._layoutOrder,
         Size = UDim2.new(1, 0, 0, hasDescription and 58 or 44), BackgroundTransparency = 1,
-    })
+    }, context)
+    applyScale(row, context, section.Context)
     create("TextLabel", row, {
         Position = hasDescription and UDim2.fromOffset(labelX, 6) or UDim2.fromOffset(labelX, 0),
         Size = hasDescription and UDim2.new(1, labelWidth, 0, 21) or UDim2.new(1, labelWidth, 1, 0),
-        BackgroundTransparency = 1, Text = text or name or "Control", TextColor3 = section.Theme.text,
+        BackgroundTransparency = 1, Text = text or name or "Control", TextColor3 = theme.text,
         Font = Enum.Font.GothamMedium, TextSize = 12,
         TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center,
         TextTruncate = Enum.TextTruncate.AtEnd,
@@ -2551,7 +3261,7 @@ local function createSectionRow(section, text, controlWidth, name, description, 
     if hasDescription then
         create("TextLabel", row, {
             Position = UDim2.fromOffset(labelX, 29), Size = UDim2.new(1, labelWidth, 0, 17),
-            BackgroundTransparency = 1, Text = description, TextColor3 = section.Theme.muted,
+            BackgroundTransparency = 1, Text = description, TextColor3 = theme.muted,
             Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left,
             TextTruncate = Enum.TextTruncate.AtEnd,
         })
@@ -2561,12 +3271,12 @@ local function createSectionRow(section, text, controlWidth, name, description, 
             Name = (name or "Control") .. "Icon",
             Position = UDim2.fromOffset(12, hasDescription and 8 or 14),
             Size = UDim2.fromOffset(16, 16),
-            Color = section.Theme.muted,
+            Color = theme.muted,
         })
     end
     create("Frame", row, {
         AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, 0),
-        Size = UDim2.new(1, -12, 0, 1), BackgroundColor3 = section.Theme.line,
+        Size = UDim2.new(1, -12, 0, 1), BackgroundColor3 = theme.line,
         BackgroundTransparency = 0.45, BorderSizePixel = 0,
     })
     return row
@@ -2598,8 +3308,9 @@ function SectionMethods:Button(config)
     config = config or {}
     assert(type(config) == "table", "Section:Button expects a config table")
     assert(type(config.Text) == "string", "Section:Button requires Text")
-    local theme = self.Theme or ControlsOverview.Theme
-    local row = createSectionRow(self, config.Text or "Button", 132, "Button", config.Description, config.Icon)
+    local context = resolveControlContext(self, config)
+    local theme = context.Theme
+    local row = createSectionRow(self, config.Text or "Button", 132, "Button", config.Description, config.Icon, context)
     local button = makeSectionButton(row, config.ButtonText or "Run", 132, theme, false)
     local style = config.Style
     if style == nil then
@@ -2625,8 +3336,8 @@ function SectionMethods:Button(config)
     local accent = config.Danger == true
         and roleColor(theme.danger, Color3.fromRGB(235, 83, 91))
         or roleColor(theme.lime, Color3.fromRGB(190, 220, 35))
-    local darkText = roleColor(theme.card, Color3.fromRGB(24, 25, 27))
-    local white = Color3.fromRGB(255, 255, 255)
+    local darkText = roleColor(theme.accentText, roleColor(theme.card, Color3.fromRGB(24, 25, 27)))
+    local accentHighlight = roleColor(theme.accentHighlight, Color3.fromRGB(255, 255, 255))
     local outlineHoverColor = roleColor(config.HoverColor, accent)
     local outlineHoverFill = roleColor(config.HoverFill, theme.hover or theme.control)
     local baseButtonText = tostring(config.ButtonText == nil and "Run" or config.ButtonText)
@@ -2680,7 +3391,7 @@ function SectionMethods:Button(config)
             borderColor = isHovered and outlineHoverColor or (theme.line or theme.muted)
             borderTransparency = isHovered and 0 or 0.2
         elseif style == "filled" then
-            background = isHovered and accent:Lerp(white, 0.12) or accent
+            background = isHovered and accent:Lerp(accentHighlight, 0.12) or accent
             backgroundTransparency = 0
             textColor = darkText
             borderColor = background
@@ -2733,9 +3444,9 @@ function SectionMethods:Button(config)
         LucideIcons.Set(buttonIcon, buttonIconName, iconColor)
         local scale = animated and iconScale or nil
         if animated then
-            TweenService:Create(buttonIcon, TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Rotation = 0}):Play()
+            TweenService:Create(buttonIcon, styledTweenInfo(buttonIcon, 0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Rotation = 0}):Play()
             if scale then
-                TweenService:Create(scale, TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = 1}):Play()
+                TweenService:Create(scale, styledTweenInfo(scale, 0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = 1}):Play()
             end
         else
             buttonIcon.Rotation = 0
@@ -2752,13 +3463,13 @@ function SectionMethods:Button(config)
         end
         local duration = isClick and 0.38 or 0.14
         if tonumber(spec.Scale) then
-            TweenService:Create(iconScale, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            TweenService:Create(iconScale, styledTweenInfo(iconScale, duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                 Scale = math.clamp(tonumber(spec.Scale), 0.1, 3),
             }):Play()
         end
         if tonumber(spec.Rotate) then
             local targetRotation = isClick and (buttonIcon.Rotation + tonumber(spec.Rotate)) or tonumber(spec.Rotate)
-            TweenService:Create(buttonIcon, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            TweenService:Create(buttonIcon, styledTweenInfo(buttonIcon, duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                 Rotation = targetRotation,
             }):Play()
         end
@@ -2882,8 +3593,9 @@ end
 function SectionMethods:Slider(config)
     config = config or {}
     assert(type(config) == "table", "Section:Slider expects a config table")
-    local theme = self.Theme or ControlsOverview.Theme
-    local row = createSectionRow(self, config.Text or "Slider", 184, "Slider", config.Description, config.Icon)
+    local context = resolveControlContext(self, config)
+    local theme = context.Theme
+    local row = createSectionRow(self, config.Text or "Slider", 184, "Slider", config.Description, config.Icon, context)
     local control = create("Frame", row, {
         AnchorPoint = Vector2.new(1, 0.5),
         Position = UDim2.new(1, -12, 0.5, 0),
@@ -2981,8 +3693,9 @@ end
 function SectionMethods:Input(config)
     config = config or {}
     assert(type(config) == "table", "Section:Input expects a config table")
-    local theme = self.Theme or ControlsOverview.Theme
-    local row = createSectionRow(self, config.Text or "Input", 174, "Input", config.Description, config.Icon)
+    local context = resolveControlContext(self, config)
+    local theme = context.Theme
+    local row = createSectionRow(self, config.Text or "Input", 174, "Input", config.Description, config.Icon, context)
     local initial = controlDefault(config, "")
     local value = initial ~= nil and tostring(initial) or ""
     local input = create("TextBox", row, {
@@ -3023,11 +3736,12 @@ end
 function SectionMethods:Dropdown(config)
     config = config or {}
     assert(type(config) == "table", "Section:Dropdown expects a config table")
-    local theme = self.Theme or ControlsOverview.Theme
+    local context = resolveControlContext(self, config)
+    local theme = context.Theme
     local options = config.Options or {"Option 1"}
     if #options == 0 then options = {"Option 1"} end
     local index = table.find(options, controlDefault(config, options[1])) or 1
-    local row = createSectionRow(self, config.Text or "Dropdown", 156, "Dropdown", config.Description, config.Icon)
+    local row = createSectionRow(self, config.Text or "Dropdown", 156, "Dropdown", config.Description, config.Icon, context)
     local dropdown = makeSectionButton(row, "", 156, theme)
     dropdown.ZIndex = 21
     dropdown.TextXAlignment = Enum.TextXAlignment.Left
@@ -3052,7 +3766,7 @@ function SectionMethods:Dropdown(config)
         CanvasSize = UDim2.new(0, 0, 0, 0),
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
         ScrollingDirection = Enum.ScrollingDirection.Y,
-        ScrollBarThickness = 3,
+        ScrollBarThickness = context.Metrics.ScrollBarThickness,
         ScrollBarImageColor3 = theme.lime,
         Active = true,
         Visible = false,
@@ -3131,8 +3845,9 @@ SectionMethods.DropDown = SectionMethods.Dropdown
 function SectionMethods:Keybind(config)
     config = config or {}
     assert(type(config) == "table", "Section:Keybind expects a config table")
-    local theme = self.Theme or ControlsOverview.Theme
-    local row = createSectionRow(self, config.Text or "Keybind", 110, "Keybind", config.Description, config.Icon)
+    local context = resolveControlContext(self, config)
+    local theme = context.Theme
+    local row = createSectionRow(self, config.Text or "Keybind", 110, "Keybind", config.Description, config.Icon, context)
     local key = controlDefault(config, Enum.KeyCode.F)
     if typeof(key) ~= "EnumItem" then
         local ok, parsed = pcall(function() return Enum.KeyCode[key or "F"] end)
@@ -3239,6 +3954,7 @@ local function openColorEditor(anchor, theme, initialColor, presets, onChanged)
     if not screenGui then return nil end
     if activeColorEditor and activeColorEditor.Close then activeColorEditor:Close() end
 
+    local context = styleContexts[anchor]
     local selectedColor = typeof(initialColor) == "Color3" and initialColor or theme.lime
     local hue, saturation, value = Color3.toHSV(selectedColor)
     local paletteColors = {}
@@ -3255,7 +3971,8 @@ local function openColorEditor(anchor, theme, initialColor, presets, onChanged)
         BackgroundColor3 = theme.card,
         BorderSizePixel = 0,
         ZIndex = 80,
-    })
+    }, context)
+    applyScale(popup, context, styleContexts[screenGui])
     round(popup, 10)
     create("UIStroke", popup, {Color = theme.line, Thickness = 1})
     local popupScale = create("UIScale", popup, {Scale = 0.94})
@@ -3312,7 +4029,7 @@ local function openColorEditor(anchor, theme, initialColor, presets, onChanged)
         Name = "ColorWheel",
         Position = UDim2.new(0.5, -wheelSize / 2, 0, 43),
         Size = UDim2.fromOffset(wheelSize, wheelSize),
-        BackgroundColor3 = Color3.fromRGB(38, 39, 41),
+        BackgroundColor3 = theme.pickerSurface,
         BorderSizePixel = 0,
         ClipsDescendants = true,
         ZIndex = 82,
@@ -3350,18 +4067,18 @@ local function openColorEditor(anchor, theme, initialColor, presets, onChanged)
         Name = "Selector",
         AnchorPoint = Vector2.new(0.5, 0.5),
         Size = UDim2.fromOffset(12, 12),
-        BackgroundColor3 = Color3.fromRGB(245, 245, 245),
+        BackgroundColor3 = theme.pickerSelector,
         BorderSizePixel = 0,
         ZIndex = 85,
     })
     round(selector, 8)
-    create("UIStroke", selector, {Color = Color3.fromRGB(20, 21, 22), Thickness = 1.5})
+    create("UIStroke", selector, {Color = theme.pickerSelectorLine, Thickness = 1.5})
 
     local valueTrack = create("TextButton", popup, {
         Name = "ValueSlider",
         Position = UDim2.fromOffset(17, 238),
         Size = UDim2.new(1, -34, 0, 11),
-        BackgroundColor3 = Color3.new(1, 1, 1),
+        BackgroundColor3 = theme.pickerValueLight,
         BorderSizePixel = 0,
         Text = "",
         AutoButtonColor = false,
@@ -3369,19 +4086,19 @@ local function openColorEditor(anchor, theme, initialColor, presets, onChanged)
     })
     round(valueTrack, 8)
     local valueGradient = create("UIGradient", valueTrack, {
-        Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.new(0, 0, 0)),
+        Color = ColorSequence.new(theme.pickerValueLight, theme.pickerValueDark),
     })
     local valueMarker = create("Frame", valueTrack, {
         Name = "ValueMarker",
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.new(value, 0, 0.5, 0),
         Size = UDim2.fromOffset(10, 17),
-        BackgroundColor3 = Color3.fromRGB(238, 239, 240),
+        BackgroundColor3 = theme.pickerValueMarker,
         BorderSizePixel = 0,
         ZIndex = 84,
     })
     round(valueMarker, 5)
-    create("UIStroke", valueMarker, {Color = Color3.fromRGB(30, 31, 33), Thickness = 1})
+    create("UIStroke", valueMarker, {Color = theme.pickerValueLine, Thickness = 1})
 
     local function makeValueField(labelText, y, editable)
         create("TextLabel", popup, {
@@ -3613,8 +4330,8 @@ local function openColorEditor(anchor, theme, initialColor, presets, onChanged)
         samplingOverlay.Visible = false
         if activeColorEditor == self then activeColorEditor = nil end
         for _, connection in ipairs(connections) do connection:Disconnect() end
-        TweenService:Create(popupScale, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Scale = 0.94}):Play()
-        TweenService:Create(popup, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1}):Play()
+        TweenService:Create(popupScale, styledTweenInfo(popupScale, 0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Scale = 0.94}):Play()
+        TweenService:Create(popup, styledTweenInfo(popup, 0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1}):Play()
         task.delay(0.13, function()
             if popup.Parent then popup:Destroy() end
         end)
@@ -3678,19 +4395,20 @@ local function openColorEditor(anchor, theme, initialColor, presets, onChanged)
         end
     end))
     renderWheel()
-    TweenService:Create(popupScale, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = 1}):Play()
-    TweenService:Create(popup, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
+    TweenService:Create(popupScale, styledTweenInfo(popupScale, 0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = 1}):Play()
+    TweenService:Create(popup, styledTweenInfo(popup, 0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
     return editor
 end
 
 function SectionMethods:ColorPicker(config)
     config = config or {}
     assert(type(config) == "table", "Section:ColorPicker expects a config table")
-    local theme = self.Theme or ControlsOverview.Theme
+    local context = resolveControlContext(self, config)
+    local theme = context.Theme
     local colors = config.Colors or defaultColors(theme)
     if #colors == 0 then colors = defaultColors(theme) end
     local selectedColor = typeof(config.Value) == "Color3" and config.Value or colors[1]
-    local row = createSectionRow(self, config.Text or "Color picker", 62, "ColorPicker", config.Description, config.Icon)
+    local row = createSectionRow(self, config.Text or "Color picker", 62, "ColorPicker", config.Description, config.Icon, context)
     local preview = create("TextButton", row, {
         AnchorPoint = Vector2.new(1, 0.5),
         Position = UDim2.new(1, -12, 0.5, 0),
@@ -3740,12 +4458,13 @@ end
 function SectionMethods:Palette(config)
     config = config or {}
     assert(type(config) == "table", "Section:Palette expects a config table")
-    local theme = self.Theme or ControlsOverview.Theme
+    local context = resolveControlContext(self, config)
+    local theme = context.Theme
     local colors = config.Colors or defaultColors(theme)
     if #colors == 0 then colors = defaultColors(theme) end
     local selectedColor = typeof(config.Value) == "Color3" and config.Value or colors[1]
     local selectedIndex = table.find(colors, selectedColor)
-    local row = createSectionRow(self, config.Text or "Palette", 184, "Palette", config.Description, config.Icon)
+    local row = createSectionRow(self, config.Text or "Palette", 184, "Palette", config.Description, config.Icon, context)
     local holder = create("ScrollingFrame", row, {
         Name = "ColorSwatches",
         AnchorPoint = Vector2.new(1, 0.5),
@@ -3808,10 +4527,17 @@ function SectionMethods:Palette(config)
     return exposeSectionHandle(handle, config)
 end
 
-function ControlsOverview.Build(parent, callbacks)
+function ControlsOverview.Build(parent, callbacks, options)
     callbacks = callbacks or {}
     assert(type(callbacks) == "table", "ControlsOverview.Build callbacks must be a table")
-    local theme = ControlsOverview.Theme
+    options = type(options) == "table" and options or {}
+    local parentContext = styleContexts[parent]
+    local context = resolveStyleContext(parentContext, options)
+    local theme = context.Theme
+    local title = options.Title or ControlsOverview.Title
+    local description = options.Description or ControlsOverview.Description
+    local examples = options.Examples or ControlsOverview.Examples
+    assert(type(examples) == "table", "ControlsOverview.Build Examples must be a table")
     local page = create("ScrollingFrame", parent, {
         Name = "ControlsOverviewPage",
         Size = UDim2.fromScale(1, 1),
@@ -3820,10 +4546,11 @@ function ControlsOverview.Build(parent, callbacks)
         CanvasSize = UDim2.new(0, 0, 0, 0),
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
         ScrollingDirection = Enum.ScrollingDirection.Y,
-        ScrollBarThickness = 4,
+        ScrollBarThickness = context.Metrics.ScrollBarThickness,
         ScrollBarImageColor3 = theme.lime,
         Visible = false,
-    })
+    }, context)
+    applyScale(page, context, parentContext)
     local pageThemeRefreshers = {}
     themeRefreshers[page] = function()
         for _, refresh in ipairs(pageThemeRefreshers) do
@@ -3835,7 +4562,7 @@ function ControlsOverview.Build(parent, callbacks)
     end)
 
     local layout = create("UIListLayout", page, {
-        Padding = UDim.new(0, 8),
+        Padding = UDim.new(0, context.Metrics.SectionGap),
         SortOrder = Enum.SortOrder.LayoutOrder,
     })
 
@@ -3849,7 +4576,7 @@ function ControlsOverview.Build(parent, callbacks)
         Position = UDim2.fromOffset(10, 2),
         Size = UDim2.new(1, -20, 0, 20),
         BackgroundTransparency = 1,
-        Text = ControlsOverview.Title,
+        Text = title,
         TextColor3 = theme.text,
         Font = Enum.Font.GothamSemibold,
         TextSize = 16,
@@ -3859,14 +4586,14 @@ function ControlsOverview.Build(parent, callbacks)
         Position = UDim2.fromOffset(10, 24),
         Size = UDim2.new(1, -20, 0, 17),
         BackgroundTransparency = 1,
-        Text = ControlsOverview.Description,
+        Text = description,
         TextColor3 = theme.muted,
         Font = Enum.Font.Gotham,
         TextSize = 10,
         TextXAlignment = Enum.TextXAlignment.Left,
     })
 
-    for order, example in ipairs(ControlsOverview.Examples) do
+    for order, example in ipairs(examples) do
         local hasIcon = type(example.Icon) == "string" and LucideIcons.Has(example.Icon)
         local card = create("Frame", page, {
             Name = example.Type .. "Example",
@@ -3938,7 +4665,7 @@ function ControlsOverview.Build(parent, callbacks)
             local knob = create("Frame", toggle, {
                 Position = knobPosition(enabled, 14),
                 Size = UDim2.fromOffset(14, 14),
-                BackgroundColor3 = enabled and theme.lime or Color3.fromRGB(235, 236, 237),
+                BackgroundColor3 = enabled and theme.lime or theme.toggleKnob,
                 BorderSizePixel = 0,
             })
             round(knob, 7)
@@ -3951,7 +4678,7 @@ function ControlsOverview.Build(parent, callbacks)
                 tween(knob, {
                     Position = knobPosition(enabled, knobSize),
                     Size = UDim2.fromOffset(knobSize, knobSize),
-                    BackgroundColor3 = enabled and theme.lime or Color3.fromRGB(235, 236, 237),
+                    BackgroundColor3 = enabled and theme.lime or theme.toggleKnob,
                 })
             end
             table.insert(pageThemeRefreshers, renderToggle)
@@ -4114,7 +4841,7 @@ function ControlsOverview.Build(parent, callbacks)
                 CanvasSize = UDim2.new(0, 0, 0, 0),
                 AutomaticCanvasSize = Enum.AutomaticSize.Y,
                 ScrollingDirection = Enum.ScrollingDirection.Y,
-                ScrollBarThickness = 3,
+                ScrollBarThickness = context.Metrics.ScrollBarThickness,
                 ScrollBarImageColor3 = theme.lime,
                 Active = true,
                 Visible = false,
