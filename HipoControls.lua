@@ -3116,6 +3116,16 @@ function SectionMethods:Title(config)
     local theme = context.Theme
     local titleText = type(config.Text) == "string" and config.Text or "Section"
     local description = type(config.Description) == "string" and config.Description ~= "" and config.Description or nil
+    local requestedColumn = config.Column
+    if requestedColumn == nil then
+        requestedColumn = self._columnIndex or 1
+    elseif requestedColumn == "left" then
+        requestedColumn = 1
+    elseif requestedColumn == "right" then
+        requestedColumn = 2
+    end
+    assert(requestedColumn == 1 or requestedColumn == 2,
+        "Title Column must be 'left', 'right', 1, or 2")
 
     if self._placeholderCard and config._Placeholder ~= true then
         local hasControls = false
@@ -3126,6 +3136,8 @@ function SectionMethods:Title(config)
             end
         end
         if not hasControls then
+            self._currentCard.Parent = self.Columns[requestedColumn]
+            self._currentCard.LayoutOrder = self._cardCount or 1
             self._currentCardTitleLabel.Text = string.upper(titleText)
             local descriptionLabel = self._currentDescriptionLabel
             if description then
@@ -3152,12 +3164,13 @@ function SectionMethods:Title(config)
                 self._currentCardHeading.Size = UDim2.new(1, 0, 0, 14)
             end
             self._placeholderCard = false
+            self._columnIndex = requestedColumn == 1 and 2 or 1
             return self._currentCard
         end
     end
 
     self._cardCount = (self._cardCount or 0) + 1
-    local columnIndex = self._columnIndex or 1
+    local columnIndex = requestedColumn
     local card = create("Frame", self.Columns[columnIndex], {
         Name = "ControlCard" .. self._cardCount,
         LayoutOrder = self._cardCount,
