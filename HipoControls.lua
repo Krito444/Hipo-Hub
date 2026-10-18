@@ -2664,7 +2664,7 @@ function ControlsOverview.new(parentOrOptions, suppliedOptions)
     local parentContext = styleContexts[parent]
     local context = resolveStyleContext(parentContext, options)
     local explicitScale = type(options.Metrics) == "table" and options.Metrics.Scale ~= nil
-    local usesReferenceSize = options.Size == nil or typeof(options.Size) == "Vector2"
+    local usesReferenceSize = options.Size == nil
     if not explicitScale and not parentContext and usesReferenceSize then
         local camera = workspace.CurrentCamera
         local viewport = camera and camera.ViewportSize
