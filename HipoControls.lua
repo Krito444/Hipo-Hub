@@ -2036,14 +2036,14 @@ local ControlsOverview = {
     Description = "Examples for the available control types.",
     Icons = LucideIcons,
     Theme = {
-        card = Color3.fromRGB(24, 25, 27),
-        line = Color3.fromRGB(45, 46, 48),
+        card = Color3.fromRGB(22, 23, 24),
+        line = Color3.fromRGB(43, 44, 46),
         text = Color3.fromRGB(242, 243, 244),
-        muted = Color3.fromRGB(154, 156, 158),
-        lime = Color3.fromRGB(190, 220, 35),
-        limeDark = Color3.fromRGB(92, 111, 19),
-        control = Color3.fromRGB(39, 40, 42),
-        hover = Color3.fromRGB(57, 59, 61),
+        muted = Color3.fromRGB(145, 146, 148),
+        lime = Color3.fromRGB(238, 239, 240),
+        limeDark = Color3.fromRGB(77, 79, 81),
+        control = Color3.fromRGB(31, 32, 34),
+        hover = Color3.fromRGB(54, 56, 58),
         danger = Color3.fromRGB(235, 83, 91),
         accentText = Color3.fromRGB(24, 25, 27),
         accentHighlight = Color3.fromRGB(255, 255, 255),
@@ -2073,15 +2073,15 @@ local themeRefreshers = {}
 
 local DEFAULT_METRICS = {
     Scale = 1,
-    HeaderHeight = 42,
-    NavWidth = 154,
-    SectionTabHeight = 36,
-    ContentPadding = 14,
+    HeaderHeight = 48,
+    NavWidth = 62,
+    SectionTabHeight = 34,
+    ContentPadding = 12,
     RowHeight = 44,
     DescriptionRowHeight = 58,
     SectionHeaderHeight = 36,
-    SectionTitleHeight = 34,
-    SectionGap = 8,
+    SectionTitleHeight = 24,
+    SectionGap = 10,
     ControlGap = 0,
     ScrollBarThickness = 4,
     CornerScale = 1,
@@ -2635,7 +2635,7 @@ end
 local function toWindowSize(value)
     if typeof(value) == "UDim2" then return value end
     if typeof(value) == "Vector2" then return UDim2.fromOffset(value.X, value.Y) end
-    return UDim2.fromOffset(700, 452)
+    return UDim2.fromOffset(820, 520)
 end
 
 -- Creates a standalone tabbed window. In a LocalScript, Parent may be omitted
@@ -2663,6 +2663,15 @@ function ControlsOverview.new(parentOrOptions, suppliedOptions)
 
     local parentContext = styleContexts[parent]
     local context = resolveStyleContext(parentContext, options)
+    local explicitScale = type(options.Metrics) == "table" and options.Metrics.Scale ~= nil
+    local usesReferenceSize = options.Size == nil or typeof(options.Size) == "Vector2"
+    if not explicitScale and not parentContext and usesReferenceSize then
+        local camera = workspace.CurrentCamera
+        local viewport = camera and camera.ViewportSize
+        if typeof(viewport) == "Vector2" and viewport.X > 0 and viewport.Y > 0 then
+            context.Metrics.Scale = math.clamp(math.min(viewport.X / 1000, viewport.Y / 560), 0.35, 4)
+        end
+    end
     local theme = context.Theme
     local screenGui
     local ownsScreenGui = false
@@ -2694,100 +2703,157 @@ function ControlsOverview.new(parentOrOptions, suppliedOptions)
         ClipsDescendants = true,
     }, context)
     applyScale(root, context, parentContext)
-    round(root, 12)
-    create("UIStroke", root, {Color = theme.line, Transparency = 0.2, Thickness = 1})
+    round(root, 16)
+    create("UIStroke", root, {Color = theme.line, Transparency = 0.28, Thickness = 1})
+
+    local sidebar = create("Frame", root, {
+        Name = "Sidebar",
+        Position = UDim2.fromOffset(8, 8),
+        Size = UDim2.new(0, 46, 1, -16),
+        BackgroundColor3 = Color3.fromRGB(15, 16, 17),
+        BorderSizePixel = 0,
+    })
+    round(sidebar, 14)
+    create("UIStroke", sidebar, {Color = theme.line, Transparency = 0.65, Thickness = 1})
+    create("UIPadding", sidebar, {
+        PaddingTop = UDim.new(0, 10),
+        PaddingBottom = UDim.new(0, 10),
+        PaddingLeft = UDim.new(0, 6),
+        PaddingRight = UDim.new(0, 6),
+    })
+    create("UIListLayout", sidebar, {
+        Padding = UDim.new(0, 8),
+        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+    })
+
+    local sidebarButtons = {}
+    local sidebarIcons = type(options.SidebarIcons) == "table" and options.SidebarIcons
+        or {"circle", "compass", "navigation", "target", "search", "settings"}
+    local activeSidebarIndex = math.clamp(tonumber(options.ActiveSidebarIndex) or 4, 1, math.max(1, #sidebarIcons))
+    for index, iconName in ipairs(sidebarIcons) do
+        local button = create("TextButton", sidebar, {
+            Name = "SidebarIcon" .. index,
+            LayoutOrder = index,
+            Size = UDim2.new(1, 0, 0, 34),
+            BackgroundColor3 = theme.hover,
+            BackgroundTransparency = index == activeSidebarIndex and 0 or 1,
+            BorderSizePixel = 0,
+            Text = "",
+            AutoButtonColor = false,
+        })
+        round(button, 10)
+        local accent = create("Frame", button, {
+            Name = "ActiveAccent",
+            Position = UDim2.fromOffset(-6, 8),
+            Size = UDim2.new(0, 2, 1, -16),
+            BackgroundColor3 = theme.text,
+            BackgroundTransparency = index == activeSidebarIndex and 0 or 1,
+            BorderSizePixel = 0,
+        })
+        round(accent, 1)
+        local iconColor = index == activeSidebarIndex and theme.text or theme.muted
+        if type(iconName) == "string" and LucideIcons.Has(iconName) then
+            LucideIcons.Create(button, iconName, {
+                Name = "Icon",
+                AnchorPoint = Vector2.new(0.5, 0.5),
+                Position = UDim2.fromScale(0.5, 0.5),
+                Size = UDim2.fromOffset(15, 15),
+                Color = iconColor,
+            })
+        end
+        sidebarButtons[index] = {Button = button, Accent = accent, Icon = iconName}
+        button.Activated:Connect(function()
+            activeSidebarIndex = index
+            for buttonIndex, item in ipairs(sidebarButtons) do
+                local active = buttonIndex == activeSidebarIndex
+                item.Button.BackgroundTransparency = active and 0 or 1
+                item.Accent.BackgroundTransparency = active and 0 or 1
+                local image = item.Button:FindFirstChild("Icon")
+                if image and image:IsA("ImageLabel") then
+                    image.ImageColor3 = active and theme.text or theme.muted
+                end
+            end
+        end)
+    end
 
     local header = create("Frame", root, {
         Name = "WindowHeader",
-        Size = UDim2.new(1, 0, 0, context.Metrics.HeaderHeight),
-        BackgroundColor3 = theme.card,
+        Position = UDim2.new(0, context.Metrics.NavWidth, 0, 0),
+        Size = UDim2.new(1, -context.Metrics.NavWidth, 0, context.Metrics.HeaderHeight),
+        BackgroundTransparency = 1,
         BorderSizePixel = 0,
         Active = true,
     })
     create("TextLabel", header, {
         Name = "WindowTitle",
-        Position = UDim2.fromOffset(16, 0),
-        Size = UDim2.new(0.65, -16, 1, 0),
+        Position = UDim2.fromOffset(12, 8),
+        Size = UDim2.new(0, 190, 0, 17),
         BackgroundTransparency = 1,
-        Text = type(options.Title) == "string" and options.Title or "HipoControls",
-        TextColor3 = theme.text,
-        Font = Enum.Font.GothamSemibold,
-        TextSize = 15,
+        Text = string.upper(type(options.Title) == "string" and options.Title or "HipoControls"),
+        TextColor3 = theme.muted,
+        Font = Enum.Font.Gotham,
+        TextSize = 9,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd,
     })
     if type(options.Subtitle) == "string" and options.Subtitle ~= "" then
         create("TextLabel", header, {
             Name = "WindowSubtitle",
-            AnchorPoint = Vector2.new(1, 0),
-            Position = UDim2.new(1, -48, 0, 0),
-            Size = UDim2.new(0.3, -10, 1, 0),
+            Position = UDim2.fromOffset(12, 23),
+            Size = UDim2.new(0, 190, 0, 13),
             BackgroundTransparency = 1,
             Text = options.Subtitle,
             TextColor3 = theme.muted,
             Font = Enum.Font.Gotham,
-            TextSize = 11,
-            TextXAlignment = Enum.TextXAlignment.Right,
+            TextSize = 9,
+            TextXAlignment = Enum.TextXAlignment.Left,
             TextTruncate = Enum.TextTruncate.AtEnd,
         })
     end
-    create("Frame", header, {
-        Name = "HeaderDivider",
-        AnchorPoint = Vector2.new(0, 1),
-        Position = UDim2.new(0, 0, 1, 0),
-        Size = UDim2.new(1, 0, 0, 1),
-        BackgroundColor3 = theme.line,
+
+    local navigation = create("Frame", header, {
+        Name = "Navigation",
+        Position = UDim2.new(0.28, 0, 0, 0),
+        Size = UDim2.new(0.6, 0, 1, 0),
+        BackgroundTransparency = 1,
         BorderSizePixel = 0,
     })
+    create("UIListLayout", navigation, {
+        FillDirection = Enum.FillDirection.Horizontal,
+        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+        VerticalAlignment = Enum.VerticalAlignment.Center,
+        Padding = UDim.new(0, 12),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+    })
+
     local closeButton = create("TextButton", header, {
         Name = "CloseButton",
         AnchorPoint = Vector2.new(1, 0.5),
-        Position = UDim2.new(1, -12, 0.5, 0),
-        Size = UDim2.fromOffset(26, 26),
+        Position = UDim2.new(1, -10, 0.5, 0),
+        Size = UDim2.fromOffset(24, 24),
         BackgroundColor3 = theme.control,
+        BackgroundTransparency = 1,
         BorderSizePixel = 0,
         Text = "×",
         TextColor3 = theme.muted,
-        Font = Enum.Font.GothamMedium,
-        TextSize = 18,
+        Font = Enum.Font.Gotham,
+        TextSize = 16,
         AutoButtonColor = false,
     })
     round(closeButton, 7)
 
     local body = create("Frame", root, {
         Name = "WindowBody",
-        Position = UDim2.new(0, 0, 0, context.Metrics.HeaderHeight),
-        Size = UDim2.new(1, 0, 1, -context.Metrics.HeaderHeight),
+        Position = UDim2.new(0, context.Metrics.NavWidth, 0, context.Metrics.HeaderHeight),
+        Size = UDim2.new(1, -context.Metrics.NavWidth, 1, -context.Metrics.HeaderHeight),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
     })
-    local navigation = create("ScrollingFrame", body, {
-        Name = "Navigation",
-        Size = UDim2.new(0, context.Metrics.NavWidth, 1, 0),
-        BackgroundColor3 = theme.control,
-        BorderSizePixel = 0,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        ScrollingDirection = Enum.ScrollingDirection.Y,
-        ScrollBarThickness = context.Metrics.ScrollBarThickness,
-        ScrollBarImageColor3 = theme.lime,
-        Active = true,
-    })
-    create("UIPadding", navigation, {
-        PaddingTop = UDim.new(0, 10),
-        PaddingBottom = UDim.new(0, 10),
-        PaddingLeft = UDim.new(0, 8),
-        PaddingRight = UDim.new(0, 8),
-    })
-    create("UIListLayout", navigation, {
-        Padding = UDim.new(0, 5),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-    })
     local content = create("Frame", body, {
         Name = "SectionPages",
-        Position = UDim2.new(0, context.Metrics.NavWidth, 0, 0),
-        Size = UDim2.new(1, -context.Metrics.NavWidth, 1, 0),
-        BackgroundColor3 = theme.card,
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ClipsDescendants = true,
     })
@@ -2798,6 +2864,8 @@ function ControlsOverview.new(parentOrOptions, suppliedOptions)
         Gui = screenGui,
         OwnsScreenGui = ownsScreenGui,
         Header = header,
+        Sidebar = sidebar,
+        SidebarButtons = sidebarButtons,
         Navigation = navigation,
         Content = content,
         Sections = {},
@@ -2815,11 +2883,9 @@ function ControlsOverview.new(parentOrOptions, suppliedOptions)
         for _, section in ipairs(window.Sections) do
             local active = section == selected
             section.Page.Visible = active
-            section.Tab.BackgroundTransparency = active and 0 or 1
-            section.Tab.BackgroundColor3 = active and theme.hover or theme.control
+            section.Tab.BackgroundTransparency = 1
             section.TabLabel.TextColor3 = active and theme.text or theme.muted
             if section.TabAccent then section.TabAccent.BackgroundTransparency = active and 0 or 1 end
-            if section.TabIcon then section.TabIcon.ImageColor3 = active and theme.lime or theme.muted end
         end
     end
     window._SelectSection = selectSection
@@ -2890,61 +2956,72 @@ function WindowMethods:Section(name, iconName, options)
         PaddingLeft = UDim.new(0, context.Metrics.ContentPadding),
         PaddingRight = UDim.new(0, context.Metrics.ContentPadding),
     })
-    create("UIListLayout", page, {
-        Padding = UDim.new(0, context.Metrics.ControlGap),
-        SortOrder = Enum.SortOrder.LayoutOrder,
+    local grid = create("Frame", page, {
+        Name = "ControlGrid",
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
     })
+    local columns = {}
+    for columnIndex = 1, 2 do
+        local column = create("Frame", grid, {
+            Name = columnIndex == 1 and "LeftColumn" or "RightColumn",
+            Position = columnIndex == 1 and UDim2.new(0, 0, 0, 0) or UDim2.new(0.5, 5, 0, 0),
+            Size = UDim2.new(0.5, -5, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundTransparency = 1,
+        })
+        create("UIListLayout", column, {
+            Padding = UDim.new(0, context.Metrics.SectionGap),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+        })
+        columns[columnIndex] = column
+    end
 
     local tab = create("TextButton", self.Navigation, {
         Name = "SectionTab" .. order,
         LayoutOrder = order,
-        Size = UDim2.new(1, -4, 0, context.Metrics.SectionTabHeight),
-        BackgroundColor3 = theme.control,
+        Size = UDim2.new(0, math.clamp(#name * 7 + 22, 54, 112), 0, context.Metrics.HeaderHeight),
+        BackgroundColor3 = theme.card,
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         Text = "",
         AutoButtonColor = false,
     }, self.Context)
-    round(tab, 7)
-    local validIcon = type(sectionOptions.Icon) == "string" and LucideIcons.Has(sectionOptions.Icon)
-    local tabIcon
-    if validIcon then
-        tabIcon = LucideIcons.Create(tab, sectionOptions.Icon, {
-            Name = "TabIcon",
-            Position = UDim2.fromOffset(10, 10),
-            Size = UDim2.fromOffset(16, 16),
-            Color = theme.muted,
-        })
-    end
+    round(tab, 5)
     local tabLabel = create("TextLabel", tab, {
         Name = "TabLabel",
-        Position = UDim2.fromOffset(validIcon and 34 or 12, 0),
-        Size = UDim2.new(1, validIcon and -42 or -20, 1, 0),
+        Size = UDim2.fromScale(1, 1),
         BackgroundTransparency = 1,
         Text = name,
         TextColor3 = theme.muted,
         Font = Enum.Font.GothamMedium,
-        TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Left,
+        TextSize = 12,
+        TextXAlignment = Enum.TextXAlignment.Center,
         TextTruncate = Enum.TextTruncate.AtEnd,
     })
     local tabAccent = create("Frame", tab, {
         Name = "ActiveAccent",
-        Position = UDim2.fromOffset(0, 7),
-        Size = UDim2.new(0, 3, 1, -14),
+        AnchorPoint = Vector2.new(0.5, 1),
+        Position = UDim2.new(0.5, 0, 1, -3),
+        Size = UDim2.new(1, -20, 0, 2),
         BackgroundColor3 = theme.lime,
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
     })
-    round(tabAccent, 2)
+    round(tabAccent, 1)
 
     local section = setmetatable({
         Frame = page,
         Page = page,
         Content = page,
+        Grid = grid,
+        Columns = columns,
+        _cardCount = 0,
+        _columnIndex = 1,
         Tab = tab,
         TabLabel = tabLabel,
-        TabIcon = tabIcon,
+        TabIcon = nil,
         TabAccent = tabAccent,
         Theme = context.Theme,
         Context = context,
@@ -2955,6 +3032,7 @@ function WindowMethods:Section(name, iconName, options)
     }, SectionMethods)
     table.insert(self.Sections, section)
     table.insert(self.Connections, tab.Activated:Connect(function() self._SelectSection(section) end))
+    section:Title({Text = name, _Placeholder = true})
     if #self.Sections == 1 then self._SelectSection(section) end
     return section
 end
@@ -3036,53 +3114,131 @@ function SectionMethods:Title(config)
     assert(type(config) == "table", "Section:Title expects a string or config table")
     local context = resolveControlContext(self, config)
     local theme = context.Theme
-    local hasDescription = type(config.Description) == "string" and config.Description ~= ""
-    local hasIcon = type(config.Icon) == "string" and LucideIcons.Has(config.Icon)
-    self._layoutOrder = self._layoutOrder + 1
-    local height = context.Metrics.SectionTitleHeight + (hasDescription and 18 or 0)
-    local heading = create("Frame", self.Content, {
-        Name = "SectionHeading",
-        LayoutOrder = self._layoutOrder,
-        Size = UDim2.new(1, 0, 0, height),
-        BackgroundTransparency = 1,
-    }, context)
-    applyScale(heading, context, self.Context)
-    if hasIcon then
-        LucideIcons.Create(heading, config.Icon, {
-            Position = UDim2.fromOffset(0, hasDescription and 5 or math.max(0, (height - 16) / 2)),
-            Size = UDim2.fromOffset(16, 16),
-            Color = theme.lime,
-        })
+    local titleText = type(config.Text) == "string" and config.Text or "Section"
+    local description = type(config.Description) == "string" and config.Description ~= "" and config.Description or nil
+
+    if self._placeholderCard and config._Placeholder ~= true then
+        local hasControls = false
+        for _, child in ipairs(self.Content:GetChildren()) do
+            if child:IsA("GuiObject") then
+                hasControls = true
+                break
+            end
+        end
+        if not hasControls then
+            self._currentCardTitleLabel.Text = string.upper(titleText)
+            local descriptionLabel = self._currentDescriptionLabel
+            if description then
+                if not descriptionLabel then
+                    descriptionLabel = create("TextLabel", self._currentCardHeading, {
+                        Name = "HeadingDescription",
+                        Position = UDim2.fromOffset(0, 15),
+                        Size = UDim2.new(1, 0, 0, 13),
+                        BackgroundTransparency = 1,
+                        TextColor3 = theme.muted,
+                        Font = Enum.Font.Gotham,
+                        TextSize = 9,
+                        TextXAlignment = Enum.TextXAlignment.Left,
+                        TextYAlignment = Enum.TextYAlignment.Center,
+                        TextTruncate = Enum.TextTruncate.AtEnd,
+                    })
+                    self._currentDescriptionLabel = descriptionLabel
+                end
+                descriptionLabel.Text = description
+                self._currentCardHeading.Size = UDim2.new(1, 0, 0, 30)
+            elseif descriptionLabel then
+                descriptionLabel:Destroy()
+                self._currentDescriptionLabel = nil
+                self._currentCardHeading.Size = UDim2.new(1, 0, 0, 14)
+            end
+            self._placeholderCard = false
+            return self._currentCard
+        end
     end
-    create("TextLabel", heading, {
-        Name = "HeadingText",
-        Position = UDim2.fromOffset(hasIcon and 24 or 0, hasDescription and 1 or 0),
-        Size = UDim2.new(1, hasIcon and -24 or 0, 0, hasDescription and 20 or height),
+
+    self._cardCount = (self._cardCount or 0) + 1
+    local columnIndex = self._columnIndex or 1
+    local card = create("Frame", self.Columns[columnIndex], {
+        Name = "ControlCard" .. self._cardCount,
+        LayoutOrder = self._cardCount,
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundColor3 = theme.card:Lerp(theme.control, 0.32),
+        BorderSizePixel = 0,
+    }, context)
+    applyScale(card, context, self.Context)
+    round(card, 14)
+    create("UIStroke", card, {Color = theme.line, Transparency = 0.5, Thickness = 1})
+    create("UIPadding", card, {
+        PaddingTop = UDim.new(0, 11),
+        PaddingBottom = UDim.new(0, 8),
+        PaddingLeft = UDim.new(0, 13),
+        PaddingRight = UDim.new(0, 13),
+    })
+    create("UIListLayout", card, {
+        Padding = UDim.new(0, 5),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+    })
+
+    local heading = create("Frame", card, {
+        Name = "CardHeading",
+        LayoutOrder = 1,
+        Size = UDim2.new(1, 0, 0, description and 30 or 14),
         BackgroundTransparency = 1,
-        Text = config.Text or "Section",
-        TextColor3 = theme.text,
-        Font = Enum.Font.GothamSemibold,
-        TextSize = 14,
+    })
+    local titleLabel = create("TextLabel", heading, {
+        Name = "HeadingText",
+        Size = UDim2.new(1, 0, 0, 14),
+        BackgroundTransparency = 1,
+        Text = string.upper(titleText),
+        TextColor3 = theme.muted,
+        Font = Enum.Font.Gotham,
+        TextSize = 9,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Center,
         TextTruncate = Enum.TextTruncate.AtEnd,
     })
-    if hasDescription then
-        create("TextLabel", heading, {
+    local descriptionLabel
+    if description then
+        descriptionLabel = create("TextLabel", heading, {
             Name = "HeadingDescription",
-            Position = UDim2.fromOffset(hasIcon and 24 or 0, 22),
-            Size = UDim2.new(1, hasIcon and -24 or 0, 0, 16),
+            Position = UDim2.fromOffset(0, 15),
+            Size = UDim2.new(1, 0, 0, 13),
             BackgroundTransparency = 1,
-            Text = config.Description,
+            Text = description,
             TextColor3 = theme.muted,
             Font = Enum.Font.Gotham,
-            TextSize = 10,
+            TextSize = 9,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Center,
             TextTruncate = Enum.TextTruncate.AtEnd,
         })
     end
-    return heading
+    local controls = create("Frame", card, {
+        Name = "CardControls",
+        LayoutOrder = 2,
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+    }, context)
+    create("UIListLayout", controls, {
+        Padding = UDim.new(0, context.Metrics.ControlGap),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+    })
+
+    self._currentCard = card
+    self._currentCardHeading = heading
+    self._currentCardTitleLabel = titleLabel
+    self._currentDescriptionLabel = descriptionLabel
+    self._placeholderCard = config._Placeholder == true
+    self.Content = controls
+    self._layoutOrder = 0
+    self._columnIndex = columnIndex == 1 and 2 or 1
+    return card
+end
+
+function SectionMethods:Group(config)
+    return self:Title(config)
 end
 
 function SectionMethods:Separator(config)
