@@ -2036,16 +2036,25 @@ local ControlsOverview = {
     Description = "Examples for the available control types.",
     Icons = LucideIcons,
     Theme = {
-        card = Color3.fromRGB(22, 23, 24),
-        line = Color3.fromRGB(43, 44, 46),
-        text = Color3.fromRGB(242, 243, 244),
-        muted = Color3.fromRGB(145, 146, 148),
-        lime = Color3.fromRGB(238, 239, 240),
-        limeDark = Color3.fromRGB(77, 79, 81),
-        control = Color3.fromRGB(31, 32, 34),
-        hover = Color3.fromRGB(54, 56, 58),
+        panel = Color3.fromRGB(19, 20, 21),
+        rail = Color3.fromRGB(15, 16, 17),
+        card = Color3.fromRGB(24, 25, 27),
+        row = Color3.fromRGB(27, 28, 30),
+        line = Color3.fromRGB(45, 46, 48),
+        text = Color3.fromRGB(255, 255, 255),
+        muted = Color3.fromRGB(154, 156, 158),
+        lime = Color3.fromRGB(255, 255, 255),
+        limeHover = Color3.fromRGB(255, 255, 255),
+        limeDark = Color3.fromRGB(70, 72, 75),
+        limeDarkHover = Color3.fromRGB(89, 91, 95),
+        control = Color3.fromRGB(39, 40, 42),
+        toggleOff = Color3.fromRGB(51, 52, 54),
+        sliderTrack = Color3.fromRGB(48, 49, 51),
+        hover = Color3.fromRGB(47, 49, 51),
+        hoverStrong = Color3.fromRGB(57, 59, 61),
         danger = Color3.fromRGB(235, 83, 91),
-        accentText = Color3.fromRGB(24, 25, 27),
+        dangerHover = Color3.fromRGB(255, 112, 120),
+        accentText = Color3.fromRGB(19, 20, 21),
         accentHighlight = Color3.fromRGB(255, 255, 255),
         toggleKnob = Color3.fromRGB(235, 236, 237),
         pickerSurface = Color3.fromRGB(38, 39, 41),
@@ -2073,14 +2082,16 @@ local themeRefreshers = {}
 
 local DEFAULT_METRICS = {
     Scale = 1,
-    HeaderHeight = 48,
-    NavWidth = 62,
+    HeaderHeight = 54,
+    NavWidth = 64,
     SectionTabHeight = 34,
-    ContentPadding = 12,
-    RowHeight = 44,
+    ContentPadding = 0,
+    RowHeight = 48,
     DescriptionRowHeight = 58,
+    ActionRowHeight = 55,
+    SliderRowHeight = 64,
     SectionHeaderHeight = 36,
-    SectionTitleHeight = 24,
+    SectionTitleHeight = 18,
     SectionGap = 10,
     ControlGap = 0,
     ScrollBarThickness = 4,
@@ -2100,6 +2111,8 @@ local METRIC_MAXIMUMS = {
     ContentPadding = 64,
     RowHeight = 240,
     DescriptionRowHeight = 300,
+    ActionRowHeight = 240,
+    SliderRowHeight = 240,
     SectionHeaderHeight = 160,
     SectionTitleHeight = 120,
     SectionGap = 100,
@@ -2185,7 +2198,7 @@ local function mergeMetrics(baseMetrics, overrides)
         local value = overrides[key]
         if value ~= nil then
             assert(type(value) == "number" and value == value, "Metric '" .. key .. "' must be a number")
-            local canBeZero = key == "SectionGap" or key == "ControlGap"
+            local canBeZero = key == "ContentPadding" or key == "SectionGap" or key == "ControlGap"
                 or key == "ScrollBarThickness" or key == "CornerScale"
             assert((canBeZero and value >= 0 or value > 0) and value <= METRIC_MAXIMUMS[key],
                 "Metric '" .. key .. "' is outside its valid range")
@@ -2257,15 +2270,16 @@ local function resolveStyleContext(parentContext, options)
     return context
 end
 
-local function applyScale(object, context, parentContext)
+local function applyScale(object, context, parentContext, alwaysCreate)
     local targetScale = context and context.Metrics and context.Metrics.Scale or 1
     local parentScale = parentContext and parentContext.Metrics and parentContext.Metrics.Scale or 1
-    if math.abs(targetScale - parentScale) > 0.001 then
+    if alwaysCreate or math.abs(targetScale - parentScale) > 0.001 then
         local scale = targetScale / parentScale
         local modifier = Instance.new("UIScale")
         modifier.Scale = scale
         modifier.Parent = object
         styleContexts[modifier] = context
+        return modifier
     end
 end
 
@@ -2276,8 +2290,15 @@ local function getStyledProperties(className, properties, context)
     if className == "Frame" and type(styled.Name) == "string"
         and string.match(styled.Name, "Row$") and typeof(styled.Size) == "UDim2" then
         local originalHeight = styled.Size.Y.Offset
-        local targetHeight = originalHeight >= DEFAULT_METRICS.DescriptionRowHeight
-            and metrics.DescriptionRowHeight or metrics.RowHeight
+        local targetHeight
+        if styled.Name == "SliderRow" then
+            targetHeight = metrics.SliderRowHeight
+        elseif styled.Name == "ButtonRow" then
+            targetHeight = originalHeight > DEFAULT_METRICS.RowHeight and metrics.ActionRowHeight or metrics.RowHeight
+        else
+            targetHeight = originalHeight >= DEFAULT_METRICS.DescriptionRowHeight
+                and metrics.DescriptionRowHeight or metrics.RowHeight
+        end
         styled.Size = UDim2.new(styled.Size.X.Scale, styled.Size.X.Offset, styled.Size.Y.Scale, targetHeight)
     end
     if className == "TextLabel" or className == "TextButton" or className == "TextBox" then
@@ -2353,8 +2374,18 @@ local function round(object, radius)
 end
 
 local function tween(object, properties)
-    local motion = TweenService:Create(object, styledTweenInfo(object, 0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), properties)
+    local motion = TweenService:Create(object, styledTweenInfo(object, 0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), properties)
     motion:Play()
+end
+
+local function bindButtonHover(button, theme, idleColor)
+    local restColor = idleColor or button.BackgroundColor3
+    button.MouseEnter:Connect(function()
+        tween(button, {BackgroundColor3 = theme.hover or theme.control})
+    end)
+    button.MouseLeave:Connect(function()
+        tween(button, {BackgroundColor3 = restColor})
+    end)
 end
 
 local notificationSequence = 0
@@ -2494,7 +2525,7 @@ local function showControlNotification(parent, title, message, theme, accentColo
     end)
 end
 
-local function makeButton(parent, text, width, bindHover)
+local function makeButton(parent, text, width)
     local context = styleContexts[parent]
     local theme = context and context.Theme or ControlsOverview.Theme
     local button = create("TextButton", parent, {
@@ -2510,10 +2541,6 @@ local function makeButton(parent, text, width, bindHover)
         AutoButtonColor = false,
     })
     round(button, 8)
-    if bindHover ~= false then
-        button.MouseEnter:Connect(function() tween(button, {BackgroundColor3 = theme.hover}) end)
-        button.MouseLeave:Connect(function() tween(button, {BackgroundColor3 = theme.control}) end)
-    end
     return button
 end
 
@@ -2664,12 +2691,11 @@ function ControlsOverview.new(parentOrOptions, suppliedOptions)
     local parentContext = styleContexts[parent]
     local context = resolveStyleContext(parentContext, options)
     local explicitScale = type(options.Metrics) == "table" and options.Metrics.Scale ~= nil
-    local usesReferenceSize = options.Size == nil
-    if not explicitScale and not parentContext and usesReferenceSize then
+    if not explicitScale and not parentContext then
         local camera = workspace.CurrentCamera
         local viewport = camera and camera.ViewportSize
         if typeof(viewport) == "Vector2" and viewport.X > 0 and viewport.Y > 0 then
-            context.Metrics.Scale = math.clamp(math.min(viewport.X / 1000, viewport.Y / 560), 0.35, 4)
+            context.Metrics.Scale = math.clamp(math.min(viewport.X / 860, viewport.Y / 560), 0.45, 1)
         end
     end
     local theme = context.Theme
@@ -2698,46 +2724,78 @@ function ControlsOverview.new(parentOrOptions, suppliedOptions)
         Size = toWindowSize(options.Size),
         Position = typeof(options.Position) == "UDim2" and options.Position or UDim2.fromScale(0.5, 0.5),
         AnchorPoint = typeof(options.AnchorPoint) == "Vector2" and options.AnchorPoint or Vector2.new(0.5, 0.5),
-        BackgroundColor3 = theme.card,
+        BackgroundColor3 = theme.panel or theme.card,
+        BackgroundTransparency = 0.2,
         BorderSizePixel = 0,
         ClipsDescendants = true,
     }, context)
-    applyScale(root, context, parentContext)
+    local rootScale = applyScale(root, context, parentContext, true)
+    create("UISizeConstraint", root, {MinSize = Vector2.new(360, 300), MaxSize = Vector2.new(1000, 650)})
     round(root, 16)
-    create("UIStroke", root, {Color = theme.line, Transparency = 0.28, Thickness = 1})
+    create("UIStroke", root, {Color = Color3.fromRGB(78, 80, 83), Transparency = 0.25, Thickness = 1})
+    local visibilityScale = create("UIScale", root, {Name = "VisibilityScale", Scale = 0.94})
 
     local sidebar = create("Frame", root, {
         Name = "Sidebar",
         Position = UDim2.fromOffset(8, 8),
-        Size = UDim2.new(0, 46, 1, -16),
-        BackgroundColor3 = Color3.fromRGB(15, 16, 17),
+        Size = UDim2.new(0, math.max(0, context.Metrics.NavWidth - 16), 1, -16),
+        BackgroundColor3 = theme.rail or Color3.fromRGB(15, 16, 17),
         BorderSizePixel = 0,
     })
-    round(sidebar, 14)
+    round(sidebar, 13)
     create("UIStroke", sidebar, {Color = theme.line, Transparency = 0.65, Thickness = 1})
-    create("UIPadding", sidebar, {
-        PaddingTop = UDim.new(0, 10),
-        PaddingBottom = UDim.new(0, 10),
-        PaddingLeft = UDim.new(0, 6),
-        PaddingRight = UDim.new(0, 6),
-    })
-    create("UIListLayout", sidebar, {
-        Padding = UDim.new(0, 8),
-        HorizontalAlignment = Enum.HorizontalAlignment.Center,
-        SortOrder = Enum.SortOrder.LayoutOrder,
+    local logoIconName = options.LogoIcon == nil and "crosshair" or options.LogoIcon
+    if type(logoIconName) == "string" and LucideIcons.Has(logoIconName) then
+        LucideIcons.Create(sidebar, logoIconName, {
+            Name = "SidebarLogo",
+            AnchorPoint = Vector2.new(0.5, 0),
+            Position = UDim2.new(0.5, 0, 0, 14),
+            Size = UDim2.fromOffset(20, 20),
+            Color = theme.lime,
+        })
+    end
+    create("Frame", sidebar, {
+        Name = "NavDivider",
+        Position = UDim2.new(0, 5, 0, 50),
+        Size = UDim2.new(1, -10, 0, 1),
+        BackgroundColor3 = theme.line,
+        BackgroundTransparency = 0.25,
+        BorderSizePixel = 0,
     })
 
     local sidebarButtons = {}
     local sidebarIcons = type(options.SidebarIcons) == "table" and options.SidebarIcons
-        or {"circle", "compass", "navigation", "target", "search", "settings"}
-    local activeSidebarIndex = math.clamp(tonumber(options.ActiveSidebarIndex) or 4, 1, math.max(1, #sidebarIcons))
+        or {"swords", "wind", "target", "search", "settings"}
+    local activeSidebarIndex = math.clamp(tonumber(options.ActiveSidebarIndex) or 1, 1, math.max(1, #sidebarIcons))
+    local function updateSidebarButton(index, isSelectionChange)
+        local item = sidebarButtons[index]
+        if not item then return end
+        local active = index == activeSidebarIndex
+        local hovered = item.Hovered == true
+        local background = active
+            and (hovered and (theme.limeDarkHover or theme.limeDark) or theme.limeDark)
+            or (hovered and (theme.hover or theme.control) or (theme.rail or Color3.fromRGB(15, 16, 17)))
+        local iconColor = active
+            and (hovered and (theme.limeHover or theme.lime) or theme.lime)
+            or (hovered and theme.text or theme.muted)
+        local duration = isSelectionChange and 0.3 or 0.12
+        local easingStyle = isSelectionChange and Enum.EasingStyle.Quint or Enum.EasingStyle.Quad
+        local function animate(object, properties)
+            if not object then return end
+            local motion = TweenService:Create(object, styledTweenInfo(object, duration, easingStyle, Enum.EasingDirection.Out), properties)
+            motion:Play()
+        end
+        animate(item.Button, {BackgroundColor3 = background})
+        animate(item.Accent, {BackgroundTransparency = active and 0 or 1})
+        if item.Image then animate(item.Image, {ImageColor3 = iconColor}) end
+    end
     for index, iconName in ipairs(sidebarIcons) do
         local button = create("TextButton", sidebar, {
             Name = "SidebarIcon" .. index,
             LayoutOrder = index,
-            Size = UDim2.new(1, 0, 0, 34),
-            BackgroundColor3 = theme.hover,
-            BackgroundTransparency = index == activeSidebarIndex and 0 or 1,
+            Position = UDim2.fromOffset(7, 64 + (index - 1) * 43),
+            Size = UDim2.fromOffset(34, 34),
+            BackgroundColor3 = index == activeSidebarIndex and theme.limeDark or (theme.rail or Color3.fromRGB(15, 16, 17)),
             BorderSizePixel = 0,
             Text = "",
             AutoButtonColor = false,
@@ -2746,54 +2804,55 @@ function ControlsOverview.new(parentOrOptions, suppliedOptions)
         local accent = create("Frame", button, {
             Name = "ActiveAccent",
             Position = UDim2.fromOffset(-6, 8),
-            Size = UDim2.new(0, 2, 1, -16),
-            BackgroundColor3 = theme.text,
+            Size = UDim2.fromOffset(3, 18),
+            BackgroundColor3 = theme.lime,
             BackgroundTransparency = index == activeSidebarIndex and 0 or 1,
             BorderSizePixel = 0,
         })
-        round(accent, 1)
+        round(accent, 2)
         local iconColor = index == activeSidebarIndex and theme.text or theme.muted
+        local image
         if type(iconName) == "string" and LucideIcons.Has(iconName) then
-            LucideIcons.Create(button, iconName, {
+            image = LucideIcons.Create(button, iconName, {
                 Name = "Icon",
                 AnchorPoint = Vector2.new(0.5, 0.5),
                 Position = UDim2.fromScale(0.5, 0.5),
-                Size = UDim2.fromOffset(15, 15),
+                Size = UDim2.fromOffset(18, 18),
                 Color = iconColor,
             })
         end
-        sidebarButtons[index] = {Button = button, Accent = accent, Icon = iconName}
+        sidebarButtons[index] = {Button = button, Accent = accent, Image = image, Icon = iconName, Hovered = false}
+        button.MouseEnter:Connect(function()
+            sidebarButtons[index].Hovered = true
+            updateSidebarButton(index, false)
+        end)
+        button.MouseLeave:Connect(function()
+            sidebarButtons[index].Hovered = false
+            updateSidebarButton(index, false)
+        end)
         button.Activated:Connect(function()
             activeSidebarIndex = index
-            for buttonIndex, item in ipairs(sidebarButtons) do
-                local active = buttonIndex == activeSidebarIndex
-                item.Button.BackgroundTransparency = active and 0 or 1
-                item.Accent.BackgroundTransparency = active and 0 or 1
-                local image = item.Button:FindFirstChild("Icon")
-                if image and image:IsA("ImageLabel") then
-                    image.ImageColor3 = active and theme.text or theme.muted
-                end
-            end
+            for buttonIndex = 1, #sidebarIcons do updateSidebarButton(buttonIndex, true) end
         end)
     end
 
     local header = create("Frame", root, {
         Name = "WindowHeader",
-        Position = UDim2.new(0, context.Metrics.NavWidth, 0, 0),
-        Size = UDim2.new(1, -context.Metrics.NavWidth, 0, context.Metrics.HeaderHeight),
+        Position = UDim2.new(0, context.Metrics.NavWidth, 0, 8),
+        Size = UDim2.new(1, -context.Metrics.NavWidth, 0, 42),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         Active = true,
     })
     create("TextLabel", header, {
         Name = "WindowTitle",
-        Position = UDim2.fromOffset(12, 8),
-        Size = UDim2.new(0, 190, 0, 17),
+        Position = UDim2.fromOffset(12, 3),
+        Size = UDim2.new(0, 170, 0, 34),
         BackgroundTransparency = 1,
         Text = string.upper(type(options.Title) == "string" and options.Title or "HipoControls"),
         TextColor3 = theme.muted,
-        Font = Enum.Font.Gotham,
-        TextSize = 9,
+        Font = Enum.Font.GothamMedium,
+        TextSize = 11,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd,
     })
@@ -2814,7 +2873,7 @@ function ControlsOverview.new(parentOrOptions, suppliedOptions)
 
     local navigation = create("Frame", header, {
         Name = "Navigation",
-        Position = UDim2.new(0.28, 0, 0, 0),
+        Position = UDim2.new(0.232, 0, 0, 0),
         Size = UDim2.new(0.6, 0, 1, 0),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
@@ -2822,8 +2881,8 @@ function ControlsOverview.new(parentOrOptions, suppliedOptions)
     create("UIListLayout", navigation, {
         FillDirection = Enum.FillDirection.Horizontal,
         HorizontalAlignment = Enum.HorizontalAlignment.Center,
-        VerticalAlignment = Enum.VerticalAlignment.Center,
-        Padding = UDim.new(0, 12),
+        VerticalAlignment = Enum.VerticalAlignment.Top,
+        Padding = UDim.new(0, 4),
         SortOrder = Enum.SortOrder.LayoutOrder,
     })
 
@@ -2846,7 +2905,7 @@ function ControlsOverview.new(parentOrOptions, suppliedOptions)
     local body = create("Frame", root, {
         Name = "WindowBody",
         Position = UDim2.new(0, context.Metrics.NavWidth, 0, context.Metrics.HeaderHeight),
-        Size = UDim2.new(1, -context.Metrics.NavWidth, 1, -context.Metrics.HeaderHeight),
+        Size = UDim2.new(1, -context.Metrics.NavWidth - 12, 1, -context.Metrics.HeaderHeight - 10),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
     })
@@ -2874,23 +2933,86 @@ function ControlsOverview.new(parentOrOptions, suppliedOptions)
         Subtitle = options.Subtitle,
         Theme = theme,
         Context = context,
+        VisibilityScale = visibilityScale,
+        VisibilityTarget = false,
+        VisibilityTweens = {},
         Keybind = options.Keybind == nil and Enum.KeyCode.RightControl or options.Keybind,
         Connections = {},
+        SidebarExpanded = false,
     }, WindowMethods)
+
+    if not explicitScale and not parentContext and rootScale then
+        local camera = workspace.CurrentCamera
+        if camera then
+            table.insert(window.Connections, camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+                local viewport = camera.ViewportSize
+                if viewport.X <= 0 or viewport.Y <= 0 then return end
+                local responsiveScale = math.clamp(math.min(viewport.X / 860, viewport.Y / 560), 0.45, 1)
+                context.Metrics.Scale = responsiveScale
+                rootScale.Scale = responsiveScale
+            end))
+        end
+    end
+
+    local sidebarHoverTweens = {}
+    local baseNavWidth = context.Metrics.NavWidth
+    local hoverNavExpansion = math.clamp(math.floor(baseNavWidth * 0.32 + 0.5), 16, 40)
+    window._setSidebarExpanded = function(expanded)
+        expanded = expanded == true
+        if window.SidebarExpanded == expanded then return end
+        window.SidebarExpanded = expanded
+        for _, activeTween in ipairs(sidebarHoverTweens) do activeTween:Cancel() end
+        table.clear(sidebarHoverTweens)
+
+        local navWidth = baseNavWidth + (expanded and hoverNavExpansion or 0)
+        local sidebarWidth = math.max(0, navWidth - 16)
+        local easing = Enum.EasingDirection.Out
+        local targets = {
+            {sidebar, {Size = UDim2.new(0, sidebarWidth, 1, -16)}},
+            {header, {Position = UDim2.new(0, navWidth, 0, 8), Size = UDim2.new(1, -navWidth, 0, 42)}},
+            {body, {Position = UDim2.new(0, navWidth, 0, context.Metrics.HeaderHeight), Size = UDim2.new(1, -navWidth - 12, 1, -context.Metrics.HeaderHeight - 10)}},
+        }
+        for _, target in ipairs(targets) do
+            local motion = TweenService:Create(
+                target[1],
+                styledTweenInfo(target[1], 0.18, Enum.EasingStyle.Quad, easing),
+                target[2]
+            )
+            table.insert(sidebarHoverTweens, motion)
+            motion:Play()
+        end
+    end
+    table.insert(window.Connections, sidebar.MouseEnter:Connect(function()
+        window:SetSidebarExpanded(true)
+    end))
+    table.insert(window.Connections, sidebar.MouseLeave:Connect(function()
+        window:SetSidebarExpanded(false)
+    end))
 
     local function selectSection(selected)
         window.ActiveSection = selected
         for _, section in ipairs(window.Sections) do
             local active = section == selected
             section.Page.Visible = active
-            section.Tab.BackgroundTransparency = 1
-            section.TabLabel.TextColor3 = active and theme.text or theme.muted
-            if section.TabAccent then section.TabAccent.BackgroundTransparency = active and 0 or 1 end
+            local selectionTween = TweenService:Create(
+                section.TabLabel,
+                styledTweenInfo(section.TabLabel, 0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+                {TextColor3 = active and theme.text or theme.muted}
+            )
+            selectionTween:Play()
+            if section.TabAccent then
+                local accentTween = TweenService:Create(
+                    section.TabAccent,
+                    styledTweenInfo(section.TabAccent, 0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+                    {BackgroundTransparency = active and 0 or 1}
+                )
+                accentTween:Play()
+            end
         end
     end
     window._SelectSection = selectSection
 
-    table.insert(window.Connections, closeButton.Activated:Connect(function() window:Destroy() end))
+    table.insert(window.Connections, closeButton.Activated:Connect(function() window:Hide() end))
     table.insert(window.Connections, closeButton.MouseEnter:Connect(function()
         tween(closeButton, {BackgroundColor3 = theme.hover, TextColor3 = theme.text})
     end))
@@ -2924,6 +3046,7 @@ function ControlsOverview.new(parentOrOptions, suppliedOptions)
             startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
     end))
 
+    window:SetVisible(true)
     return window
 end
 
@@ -2981,14 +3104,14 @@ function WindowMethods:Section(name, iconName, options)
     local tab = create("TextButton", self.Navigation, {
         Name = "SectionTab" .. order,
         LayoutOrder = order,
-        Size = UDim2.new(0, math.clamp(#name * 7 + 22, 54, 112), 0, context.Metrics.HeaderHeight),
+        Size = UDim2.fromOffset(58, context.Metrics.SectionTabHeight),
         BackgroundColor3 = theme.card,
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         Text = "",
         AutoButtonColor = false,
     }, self.Context)
-    round(tab, 5)
+    round(tab, 0)
     local tabLabel = create("TextLabel", tab, {
         Name = "TabLabel",
         Size = UDim2.fromScale(1, 1),
@@ -2996,7 +3119,7 @@ function WindowMethods:Section(name, iconName, options)
         Text = name,
         TextColor3 = theme.muted,
         Font = Enum.Font.GothamMedium,
-        TextSize = 12,
+        TextSize = 14,
         TextXAlignment = Enum.TextXAlignment.Center,
         TextTruncate = Enum.TextTruncate.AtEnd,
     })
@@ -3004,7 +3127,7 @@ function WindowMethods:Section(name, iconName, options)
         Name = "ActiveAccent",
         AnchorPoint = Vector2.new(0.5, 1),
         Position = UDim2.new(0.5, 0, 1, -3),
-        Size = UDim2.new(1, -20, 0, 2),
+        Size = UDim2.new(0.64, 0, 0, 2),
         BackgroundColor3 = theme.lime,
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
@@ -3054,6 +3177,12 @@ function WindowMethods:SetSize(size)
     return newSize
 end
 
+function WindowMethods:SetSidebarExpanded(expanded)
+    if type(expanded) ~= "boolean" or type(self._setSidebarExpanded) ~= "function" then return false end
+    self._setSidebarExpanded(expanded)
+    return self.SidebarExpanded
+end
+
 WindowMethods.Resize = WindowMethods.SetSize
 
 function WindowMethods:SelectTab(tabOrName)
@@ -3073,8 +3202,35 @@ function WindowMethods:SelectTab(tabOrName)
 end
 
 function WindowMethods:SetVisible(visible)
-    if self.Frame and self.Frame.Parent then self.Frame.Visible = visible == true end
-    return self.Frame and self.Frame.Visible or false
+    if not (self.Frame and self.Frame.Parent) then return false end
+    local shouldShow = visible == true
+    if self.VisibilityTarget == shouldShow then return shouldShow end
+    self.VisibilityTarget = shouldShow
+    for _, activeTween in ipairs(self.VisibilityTweens or {}) do activeTween:Cancel() end
+    self.VisibilityTweens = {}
+
+    if shouldShow then self.Frame.Visible = true end
+    local duration = shouldShow and 0.18 or 0.13
+    local easing = shouldShow and Enum.EasingStyle.Back or Enum.EasingStyle.Quad
+    local direction = shouldShow and Enum.EasingDirection.Out or Enum.EasingDirection.In
+    local targetTransparency = shouldShow and 0.04 or 0.2
+    local scaleTween = TweenService:Create(self.VisibilityScale,
+        styledTweenInfo(self.VisibilityScale, duration, easing, direction),
+        {Scale = shouldShow and 1 or 0.94})
+    local backgroundTween = TweenService:Create(self.Frame,
+        styledTweenInfo(self.Frame, duration, easing, direction),
+        {BackgroundTransparency = targetTransparency})
+    self.VisibilityTweens = {scaleTween, backgroundTween}
+    scaleTween.Completed:Connect(function(playbackState)
+        if self.VisibilityTarget ~= shouldShow then return end
+        if not shouldShow and playbackState == Enum.PlaybackState.Completed and self.Frame.Parent then
+            self.Frame.Visible = false
+        end
+        if playbackState ~= Enum.PlaybackState.Cancelled then self.VisibilityTweens = {} end
+    end)
+    scaleTween:Play()
+    backgroundTween:Play()
+    return shouldShow
 end
 
 function WindowMethods:Show()
@@ -3086,7 +3242,7 @@ function WindowMethods:Hide()
 end
 
 function WindowMethods:Toggle()
-    return self:SetVisible(not (self.Frame and self.Frame.Visible))
+    return self:SetVisible(not self.VisibilityTarget)
 end
 
 function WindowMethods:Notify(title, message, accentColor)
@@ -3106,6 +3262,36 @@ function WindowMethods:Destroy()
     end
     self.Sections = {}
     self.ActiveSection = nil
+end
+
+local function updateSectionColumnLayout(section)
+    local cardCount, onlyCardColumn = 0, nil
+    for columnIndex, column in ipairs(section.Columns) do
+        for _, child in ipairs(column:GetChildren()) do
+            if child:IsA("Frame") and string.match(child.Name, "^ControlCard") then
+                cardCount = cardCount + 1
+                onlyCardColumn = columnIndex
+            end
+        end
+    end
+
+    if cardCount == 1 then
+        for columnIndex, column in ipairs(section.Columns) do
+            local isOccupied = columnIndex == onlyCardColumn
+            column.Position = UDim2.new(0, 0, 0, 0)
+            column.Size = isOccupied and UDim2.new(1, 0, 0, 0) or UDim2.new(0, 0, 0, 0)
+            column.Visible = isOccupied
+        end
+    else
+        local halfGap = (section.Context.Metrics.SectionGap or 10) / 2
+        for columnIndex, column in ipairs(section.Columns) do
+            column.Position = columnIndex == 1
+                and UDim2.new(0, 0, 0, 0)
+                or UDim2.new(0.5, halfGap, 0, 0)
+            column.Size = UDim2.new(0.5, -halfGap, 0, 0)
+            column.Visible = true
+        end
+    end
 end
 
 function SectionMethods:Title(config)
@@ -3144,8 +3330,8 @@ function SectionMethods:Title(config)
                 if not descriptionLabel then
                     descriptionLabel = create("TextLabel", self._currentCardHeading, {
                         Name = "HeadingDescription",
-                        Position = UDim2.fromOffset(0, 15),
-                        Size = UDim2.new(1, 0, 0, 13),
+                        Position = UDim2.fromOffset(14, 15),
+                        Size = UDim2.new(1, -28, 0, 13),
                         BackgroundTransparency = 1,
                         TextColor3 = theme.muted,
                         Font = Enum.Font.Gotham,
@@ -3161,10 +3347,11 @@ function SectionMethods:Title(config)
             elseif descriptionLabel then
                 descriptionLabel:Destroy()
                 self._currentDescriptionLabel = nil
-                self._currentCardHeading.Size = UDim2.new(1, 0, 0, 14)
+                self._currentCardHeading.Size = UDim2.new(1, 0, 0, context.Metrics.SectionTitleHeight)
             end
             self._placeholderCard = false
             self._columnIndex = requestedColumn == 1 and 2 or 1
+            updateSectionColumnLayout(self)
             return self._currentCard
         end
     end
@@ -3176,37 +3363,38 @@ function SectionMethods:Title(config)
         LayoutOrder = self._cardCount,
         Size = UDim2.new(1, 0, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundColor3 = theme.card:Lerp(theme.control, 0.32),
+        BackgroundColor3 = theme.card,
         BorderSizePixel = 0,
     }, context)
     applyScale(card, context, self.Context)
-    round(card, 14)
-    create("UIStroke", card, {Color = theme.line, Transparency = 0.5, Thickness = 1})
+    round(card, 15)
+    create("UIStroke", card, {Color = theme.line, Transparency = 0.45, Thickness = 1})
     create("UIPadding", card, {
-        PaddingTop = UDim.new(0, 11),
-        PaddingBottom = UDim.new(0, 8),
-        PaddingLeft = UDim.new(0, 13),
-        PaddingRight = UDim.new(0, 13),
+        PaddingTop = UDim.new(0, 7),
+        PaddingBottom = UDim.new(0, 0),
+        PaddingLeft = UDim.new(0, 0),
+        PaddingRight = UDim.new(0, 0),
     })
     create("UIListLayout", card, {
-        Padding = UDim.new(0, 5),
+        Padding = UDim.new(0, 0),
         SortOrder = Enum.SortOrder.LayoutOrder,
     })
 
     local heading = create("Frame", card, {
         Name = "CardHeading",
         LayoutOrder = 1,
-        Size = UDim2.new(1, 0, 0, description and 30 or 14),
+        Size = UDim2.new(1, 0, 0, description and 30 or context.Metrics.SectionTitleHeight),
         BackgroundTransparency = 1,
     })
     local titleLabel = create("TextLabel", heading, {
         Name = "HeadingText",
-        Size = UDim2.new(1, 0, 0, 14),
+        Position = UDim2.fromOffset(14, 0),
+        Size = UDim2.new(1, -28, 0, context.Metrics.SectionTitleHeight),
         BackgroundTransparency = 1,
         Text = string.upper(titleText),
         TextColor3 = theme.muted,
-        Font = Enum.Font.Gotham,
-        TextSize = 9,
+        Font = Enum.Font.GothamMedium,
+        TextSize = 10,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Center,
         TextTruncate = Enum.TextTruncate.AtEnd,
@@ -3215,8 +3403,8 @@ function SectionMethods:Title(config)
     if description then
         descriptionLabel = create("TextLabel", heading, {
             Name = "HeadingDescription",
-            Position = UDim2.fromOffset(0, 15),
-            Size = UDim2.new(1, 0, 0, 13),
+            Position = UDim2.fromOffset(14, 15),
+            Size = UDim2.new(1, -28, 0, 13),
             BackgroundTransparency = 1,
             Text = description,
             TextColor3 = theme.muted,
@@ -3247,6 +3435,7 @@ function SectionMethods:Title(config)
     self.Content = controls
     self._layoutOrder = 0
     self._columnIndex = columnIndex == 1 and 2 or 1
+    updateSectionColumnLayout(self)
     return card
 end
 
@@ -3285,12 +3474,12 @@ function SectionMethods:Toggle(config)
 
     local hasDescription = type(config.Description) == "string" and config.Description ~= ""
     local hasIcon = type(config.Icon) == "string" and LucideIcons.Has(config.Icon)
-    local labelX = hasIcon and 36 or 12
-    local labelWidth = hasIcon and -96 or -72
+    local labelX = hasIcon and 36 or 14
+    local labelWidth = hasIcon and -174 or -150
     local row = create("Frame", self.Content, {
         Name = "ToggleRow",
         LayoutOrder = self._layoutOrder,
-        Size = UDim2.new(1, 0, 0, hasDescription and 58 or 44),
+        Size = UDim2.new(1, 0, 0, 48),
         BackgroundTransparency = 1,
     }, context)
     applyScale(row, context, self.Context)
@@ -3301,14 +3490,14 @@ function SectionMethods:Toggle(config)
         Text = config.Text or "Toggle",
         TextColor3 = theme.text,
         Font = Enum.Font.GothamMedium,
-        TextSize = 12,
+        TextSize = 13,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Center,
         TextTruncate = Enum.TextTruncate.AtEnd,
     })
     if hasDescription then
         create("TextLabel", row, {
-            Position = UDim2.fromOffset(labelX, 29),
+            Position = UDim2.fromOffset(labelX, 27),
             Size = UDim2.new(1, labelWidth, 0, 17),
             BackgroundTransparency = 1,
             Text = config.Description,
@@ -3329,8 +3518,8 @@ function SectionMethods:Toggle(config)
     end
     create("Frame", row, {
         AnchorPoint = Vector2.new(0.5, 1),
-        Position = UDim2.new(0.5, 0, 1, 0),
-        Size = UDim2.new(1, -12, 0, 1),
+        Position = UDim2.new(0.5, 0, 1, -1),
+        Size = UDim2.new(1, -24, 0, 1),
         BackgroundColor3 = theme.line,
         BackgroundTransparency = 0.45,
         BorderSizePixel = 0,
@@ -3339,9 +3528,9 @@ function SectionMethods:Toggle(config)
     local enabled = controlDefault(config, false) == true
     local toggle = create("TextButton", row, {
         AnchorPoint = Vector2.new(1, 0.5),
-        Position = UDim2.new(1, -12, 0.5, 0),
+        Position = UDim2.new(1, -14, 0.5, 0),
         Size = UDim2.fromOffset(38, 21),
-        BackgroundColor3 = enabled and theme.limeDark or theme.control,
+        BackgroundColor3 = enabled and theme.limeDark or theme.toggleOff,
         BorderSizePixel = 0,
         Text = "",
         AutoButtonColor = false,
@@ -3361,15 +3550,17 @@ function SectionMethods:Toggle(config)
 
     local hovered = false
     local function renderToggle()
-        local knobSize = hovered and 15 or 14
-        local background = enabled and (hovered and theme.limeDark:Lerp(theme.lime, 0.2) or theme.limeDark)
-            or (hovered and theme.hover or theme.control)
-        tween(toggle, {BackgroundColor3 = background})
-        tween(knob, {
+        local trackColor = enabled and theme.limeDark or theme.toggleOff
+        if hovered then trackColor = enabled and theme.limeDarkHover or theme.hoverStrong end
+        local knobSize = hovered and 16 or 14
+        local toggleTweenInfo = TweenInfo.new(0.14, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+        TweenService:Create(toggle, toggleTweenInfo, {BackgroundColor3 = trackColor}):Play()
+        TweenService:Create(knob, toggleTweenInfo, {
             Position = knobPosition(enabled, knobSize),
             Size = UDim2.fromOffset(knobSize, knobSize),
-            BackgroundColor3 = enabled and theme.lime or theme.toggleKnob,
+            BackgroundColor3 = enabled and (hovered and theme.limeHover or theme.lime) or theme.toggleKnob,
         })
+            :Play()
     end
     toggle.MouseEnter:Connect(function()
         hovered = true
@@ -3412,24 +3603,34 @@ local function createSectionRow(section, text, controlWidth, name, description, 
     section._layoutOrder = section._layoutOrder + 1
     local hasDescription = type(description) == "string" and description ~= ""
     local hasIcon = type(iconName) == "string" and LucideIcons.Has(iconName)
-    local labelX = hasIcon and 36 or 12
-    local labelWidth = -(controlWidth + (hasIcon and 60 or 36))
+    local labelX = hasIcon and 36 or 14
+    local labelWidth = -(controlWidth + (hasIcon and 60 or 34))
+    local rowHeight
+    if name == "Dropdown" then
+        rowHeight = context.Metrics.DescriptionRowHeight
+    elseif name == "Button" then
+        rowHeight = hasDescription and context.Metrics.ActionRowHeight or context.Metrics.RowHeight
+    elseif name == "Slider" then
+        rowHeight = context.Metrics.SliderRowHeight
+    else
+        rowHeight = hasDescription and context.Metrics.DescriptionRowHeight or context.Metrics.RowHeight
+    end
     local row = create("Frame", section.Content, {
         Name = (name or "Control") .. "Row", LayoutOrder = section._layoutOrder,
-        Size = UDim2.new(1, 0, 0, hasDescription and 58 or 44), BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, rowHeight), BackgroundTransparency = 1,
     }, context)
     applyScale(row, context, section.Context)
     create("TextLabel", row, {
-        Position = hasDescription and UDim2.fromOffset(labelX, 6) or UDim2.fromOffset(labelX, 0),
-        Size = hasDescription and UDim2.new(1, labelWidth, 0, 21) or UDim2.new(1, labelWidth, 1, 0),
+        Position = UDim2.fromOffset(labelX, 6),
+        Size = UDim2.new(1, labelWidth, 0, 20),
         BackgroundTransparency = 1, Text = text or name or "Control", TextColor3 = theme.text,
-        Font = Enum.Font.GothamMedium, TextSize = 12,
+        Font = Enum.Font.GothamMedium, TextSize = 13,
         TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center,
         TextTruncate = Enum.TextTruncate.AtEnd,
     })
     if hasDescription then
         create("TextLabel", row, {
-            Position = UDim2.fromOffset(labelX, 29), Size = UDim2.new(1, labelWidth, 0, 17),
+            Position = UDim2.fromOffset(labelX, 27), Size = UDim2.new(1, labelWidth, 0, 18),
             BackgroundTransparency = 1, Text = description, TextColor3 = theme.muted,
             Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left,
             TextTruncate = Enum.TextTruncate.AtEnd,
@@ -3443,19 +3644,20 @@ local function createSectionRow(section, text, controlWidth, name, description, 
             Color = theme.muted,
         })
     end
-    create("Frame", row, {
-        AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, 0),
-        Size = UDim2.new(1, -12, 0, 1), BackgroundColor3 = theme.line,
+    local divider = create("Frame", row, {
+        AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -1),
+        Size = UDim2.new(1, -24, 0, 1), BackgroundColor3 = theme.line,
         BackgroundTransparency = 0.45, BorderSizePixel = 0,
     })
+    divider.Visible = rowHeight > 38 and name ~= "Slider"
     return row
 end
 
-local function makeSectionButton(parent, text, width, theme, bindHover)
+local function makeSectionButton(parent, text, width, theme)
     local button = create("TextButton", parent, {
         AnchorPoint = Vector2.new(1, 0.5),
-        Position = UDim2.new(1, -12, 0.5, 0),
-        Size = UDim2.fromOffset(width, 29),
+        Position = UDim2.new(1, -14, 0.5, 0),
+        Size = UDim2.fromOffset(width, 30),
         BackgroundColor3 = theme.control,
         BorderSizePixel = 0,
         Text = text or "Select...",
@@ -3465,11 +3667,7 @@ local function makeSectionButton(parent, text, width, theme, bindHover)
         AutoButtonColor = false,
         TextTruncate = Enum.TextTruncate.AtEnd,
     })
-    round(button, 8)
-    if bindHover ~= false then
-        button.MouseEnter:Connect(function() tween(button, {BackgroundColor3 = theme.hover}) end)
-        button.MouseLeave:Connect(function() tween(button, {BackgroundColor3 = theme.control}) end)
-    end
+    round(button, 9)
     return button
 end
 
@@ -3479,8 +3677,8 @@ function SectionMethods:Button(config)
     assert(type(config.Text) == "string", "Section:Button requires Text")
     local context = resolveControlContext(self, config)
     local theme = context.Theme
-    local row = createSectionRow(self, config.Text or "Button", 132, "Button", config.Description, config.Icon, context)
-    local button = makeSectionButton(row, config.ButtonText or "Run", 132, theme, false)
+    local row = createSectionRow(self, config.Text or "Button", 116, "Button", config.Description, config.Icon, context)
+    local button = makeSectionButton(row, config.ButtonText or "Run", 116, theme)
     local style = config.Style
     if style == nil then
         style = config.Primary == true and "filled" or "outline"
@@ -3764,83 +3962,105 @@ function SectionMethods:Slider(config)
     assert(type(config) == "table", "Section:Slider expects a config table")
     local context = resolveControlContext(self, config)
     local theme = context.Theme
-    local row = createSectionRow(self, config.Text or "Slider", 184, "Slider", config.Description, config.Icon, context)
-    local control = create("Frame", row, {
-        AnchorPoint = Vector2.new(1, 0.5),
-        Position = UDim2.new(1, -12, 0.5, 0),
-        Size = UDim2.fromOffset(184, 30),
-        BackgroundTransparency = 1,
-    })
-    local minValue = tonumber(config.Min) or 0
-    local maxValue = tonumber(config.Max) or 100
-    if maxValue <= minValue then maxValue = minValue + 1 end
+    local row = createSectionRow(self, config.Text or "Slider", 116, "Slider", config.Description, config.Icon, context)
+    local minimum = tonumber(config.Min) or 0
+    local maximum = tonumber(config.Max) or 100
+    if maximum <= minimum then maximum = minimum + 1 end
     local step = math.max(math.abs(tonumber(config.Step) or 1), 0.000001)
     local function snap(raw)
-        local snapped = minValue + math.floor((raw - minValue) / step + 0.5) * step
-        return math.clamp(tonumber(string.format("%.6f", snapped)), minValue, maxValue)
+        local snapped = minimum + math.floor((raw - minimum) / step + 0.5) * step
+        return math.clamp(tonumber(string.format("%.6f", snapped)), minimum, maximum)
     end
-    local value = snap(math.clamp(tonumber(controlDefault(config, minValue)) or minValue, minValue, maxValue))
-    local track = create("TextButton", control, {
-        Position = UDim2.fromOffset(0, 13),
-        Size = UDim2.new(1, -44, 0, 4),
+    local value = snap(math.clamp(tonumber(controlDefault(config, minimum)) or minimum, minimum, maximum))
+
+    local valueLabel = create("TextLabel", row, {
+        AnchorPoint = Vector2.new(1, 0),
+        Position = UDim2.new(1, -14, 0, 4),
+        Size = UDim2.fromOffset(82, 23),
         BackgroundColor3 = theme.control,
+        BorderSizePixel = 0,
+        TextColor3 = theme.text,
+        Font = Enum.Font.GothamMedium,
+        TextSize = 11,
+        Text = "",
+        TextXAlignment = Enum.TextXAlignment.Center,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+    })
+    round(valueLabel, 8)
+
+    local track = create("TextButton", row, {
+        Name = "SliderTrack",
+        Position = UDim2.fromOffset(14, 42),
+        Size = UDim2.new(1, -28, 0, 4),
+        BackgroundColor3 = theme.sliderTrack,
         BorderSizePixel = 0,
         Text = "",
         AutoButtonColor = false,
     })
     round(track, 3)
-    local fill = create("Frame", track, {Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = theme.lime, BorderSizePixel = 0})
-    round(fill, 3)
-    local knob = create("Frame", track, {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.new(0, 0, 0.5, 0),
-        Size = UDim2.fromOffset(12, 12),
+    local fill = create("Frame", track, {
+        Name = "SliderFill",
+        Size = UDim2.new(0, 0, 1, 0),
         BackgroundColor3 = theme.lime,
         BorderSizePixel = 0,
     })
-    round(knob, 6)
-    local valueLabel = create("TextLabel", control, {
-        AnchorPoint = Vector2.new(1, 0.5),
-        Position = UDim2.new(1, 0, 0.5, 0),
-        Size = UDim2.fromOffset(38, 24),
-        BackgroundTransparency = 1,
-        TextColor3 = theme.text,
-        Font = Enum.Font.GothamMedium,
-        TextSize = 11,
-        Text = "",
-        TextXAlignment = Enum.TextXAlignment.Right,
+    round(fill, 3)
+    local knob = create("Frame", track, {
+        Name = "SliderKnob",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0, 0, 0.5, 0),
+        Size = UDim2.fromOffset(14, 14),
+        BackgroundColor3 = theme.lime,
+        BorderSizePixel = 0,
     })
+    round(knob, 7)
+
     local function render()
-        local alpha = math.clamp((value - minValue) / (maxValue - minValue), 0, 1)
+        local alpha = math.clamp((value - minimum) / (maximum - minimum), 0, 1)
         fill.Size = UDim2.new(alpha, 0, 1, 0)
         knob.Position = UDim2.new(alpha, 0, 0.5, 0)
-        valueLabel.Text = tostring(value) .. (config.Suffix or "")
+        local formatted = step < 1
+            and string.format("%.2f", value)
+            or tostring(math.floor(value + 0.5))
+        valueLabel.Text = formatted .. (config.Suffix or "")
         config.Value = value
     end
     local function setValue(newValue, notify)
         local previous = value
-        value = snap(math.clamp(tonumber(newValue) or minValue, minValue, maxValue))
+        value = snap(math.clamp(tonumber(newValue) or minimum, minimum, maximum))
         render()
         if notify and previous ~= value and type(config.Callback) == "function" then config.Callback(value) end
     end
     local dragging = false
+    local knobHovered = false
+    local function getKnobSize()
+        return knobHovered and not dragging and 17 or 14
+    end
+    local function renderKnobHover()
+        local size = getKnobSize()
+        tween(knob, {
+            Size = UDim2.fromOffset(size, size),
+            BackgroundColor3 = knobHovered and not dragging and theme.limeHover or theme.lime,
+        })
+    end
+    knob.MouseEnter:Connect(function()
+        knobHovered = true
+        renderKnobHover()
+    end)
+    knob.MouseLeave:Connect(function()
+        knobHovered = false
+        renderKnobHover()
+    end)
     local function setAt(x)
         local width = track.AbsoluteSize.X
         if width <= 0 then return end
         local alpha = math.clamp((x - track.AbsolutePosition.X) / width, 0, 1)
-        setValue(minValue + (maxValue - minValue) * alpha, true)
+        setValue(minimum + (maximum - minimum) * alpha, true)
     end
-    track.MouseEnter:Connect(function()
-        tween(track, {BackgroundColor3 = theme.hover})
-        tween(knob, {Size = UDim2.fromOffset(15, 15)})
-    end)
-    track.MouseLeave:Connect(function()
-        tween(track, {BackgroundColor3 = theme.control})
-        tween(knob, {Size = UDim2.fromOffset(12, 12)})
-    end)
     track.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
+            renderKnobHover()
             setAt(input.Position.X)
         end
     end)
@@ -3850,10 +4070,13 @@ function SectionMethods:Slider(config)
         end
     end)
     UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+            renderKnobHover()
+        end
     end)
     render()
-    local handle = {Instance = track, Row = row}
+    local handle = {Instance = track, Knob = knob, Row = row}
     function handle:GetValue() return value end
     function handle:SetValue(newValue) setValue(newValue, false); return value end
     return exposeSectionHandle(handle, config)
@@ -3883,9 +4106,21 @@ function SectionMethods:Input(config)
         TextXAlignment = Enum.TextXAlignment.Left,
     })
     round(input, 8)
-    input.MouseEnter:Connect(function() tween(input, {BackgroundColor3 = theme.hover}) end)
-    input.MouseLeave:Connect(function() tween(input, {BackgroundColor3 = theme.control}) end)
+    local inputStroke = create("UIStroke", input, {
+        Color = theme.line,
+        Thickness = 1,
+        Transparency = 0.7,
+    })
+    local function renderInputFocus(focused)
+        tween(input, {BackgroundColor3 = focused and (theme.hover or theme.control) or theme.control})
+        tween(inputStroke, {
+            Color = focused and theme.lime or theme.line,
+            Transparency = focused and 0.18 or 0.7,
+        })
+    end
+    input.Focused:Connect(function() renderInputFocus(true) end)
     input.FocusLost:Connect(function()
+        renderInputFocus(false)
         value = input.Text
         config.Value = value
         if type(config.Callback) == "function" then config.Callback(value) end
@@ -3910,8 +4145,9 @@ function SectionMethods:Dropdown(config)
     local options = config.Options or {"Option 1"}
     if #options == 0 then options = {"Option 1"} end
     local index = table.find(options, controlDefault(config, options[1])) or 1
-    local row = createSectionRow(self, config.Text or "Dropdown", 156, "Dropdown", config.Description, config.Icon, context)
-    local dropdown = makeSectionButton(row, "", 156, theme)
+    local row = createSectionRow(self, config.Text or "Dropdown", 116, "Dropdown", config.Description, config.Icon, context)
+    local dropdown = makeSectionButton(row, "", 116, theme)
+    dropdown.BackgroundTransparency = 1
     dropdown.ZIndex = 21
     dropdown.TextXAlignment = Enum.TextXAlignment.Left
     create("UIPadding", dropdown, {PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 28)})
@@ -3923,14 +4159,14 @@ function SectionMethods:Dropdown(config)
         Color = theme.muted,
         ZIndex = dropdown.ZIndex + 1,
     })
-    local itemHeight = 27
+    local itemHeight = 28
     local visibleOptions = math.max(1, config.VisibleOptions or 4)
     local menu = create("ScrollingFrame", row, {
         Name = "DropdownOptions",
         AnchorPoint = Vector2.new(1, 0),
-        Position = UDim2.new(1, -12, 1, 2),
-        Size = UDim2.fromOffset(156, math.min(#options, visibleOptions) * itemHeight),
-        BackgroundColor3 = theme.control,
+        Position = UDim2.new(1, -14, 0, context.Metrics.DescriptionRowHeight),
+        Size = UDim2.fromOffset(116, math.min(#options, visibleOptions) * itemHeight + 8),
+        BackgroundColor3 = theme.row,
         BorderSizePixel = 0,
         CanvasSize = UDim2.new(0, 0, 0, 0),
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
@@ -3943,17 +4179,14 @@ function SectionMethods:Dropdown(config)
     })
     round(menu, 8)
     create("UIStroke", menu, {Color = theme.line, Transparency = 0.2, Thickness = 1})
-    create("UIListLayout", menu, {Padding = UDim.new(0, 1), SortOrder = Enum.SortOrder.LayoutOrder})
+    create("UIListLayout", menu, {Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder})
     local open = false
     local function setOpen(isOpen)
         open = isOpen
         menu.Visible = open
         row.ZIndex = open and 20 or 1
         dropdown.ZIndex = open and 21 or 1
-        if dropdownIcon then
-            dropdownIcon.ZIndex = dropdown.ZIndex + 1
-            dropdownIcon.Rotation = open and 180 or 0
-        end
+        if dropdownIcon then dropdownIcon.ZIndex = dropdown.ZIndex + 1 end
         dropdown.Text = tostring(options[index])
         if open then menu.CanvasPosition = Vector2.new(0, 0) end
     end
@@ -3962,7 +4195,7 @@ function SectionMethods:Dropdown(config)
             Name = "Option" .. tostring(optionIndex),
             LayoutOrder = optionIndex,
             Size = UDim2.new(1, -6, 0, 26),
-            BackgroundColor3 = theme.control,
+            BackgroundColor3 = theme.row,
             BorderSizePixel = 0,
             Text = tostring(option),
             TextColor3 = theme.text,
@@ -3973,8 +4206,6 @@ function SectionMethods:Dropdown(config)
             ZIndex = 23,
         })
         round(optionButton, 6)
-        optionButton.MouseEnter:Connect(function() tween(optionButton, {BackgroundColor3 = theme.hover}) end)
-        optionButton.MouseLeave:Connect(function() tween(optionButton, {BackgroundColor3 = theme.control}) end)
         optionButton.Activated:Connect(function()
             index = optionIndex
             config.Value = option
@@ -4369,8 +4600,7 @@ local function openColorEditor(anchor, theme, initialColor, presets, onChanged)
         Color = theme.muted,
         ZIndex = 84,
     })
-    pipetteButton.MouseEnter:Connect(function() tween(pipetteButton, {BackgroundColor3 = theme.hover}) end)
-    pipetteButton.MouseLeave:Connect(function() tween(pipetteButton, {BackgroundColor3 = theme.control}) end)
+    bindButtonHover(pipetteButton, theme)
 
     local samplingOverlay = create("TextButton", screenGui, {
         Name = "EyedropperOverlay",
@@ -4658,8 +4888,10 @@ function SectionMethods:Palette(config)
     local function render()
         config.Value = selectedColor
         for index, outline in ipairs(strokes) do
-            outline.Color = index == selectedIndex and theme.lime or theme.line
-            outline.Thickness = index == selectedIndex and 2 or 1
+            tween(outline, {
+                Color = index == selectedIndex and theme.lime or theme.line,
+                Thickness = index == selectedIndex and 2 or 1,
+            })
         end
     end
     for index, color in ipairs(colors) do
@@ -4674,8 +4906,6 @@ function SectionMethods:Palette(config)
         })
         round(swatch, 6)
         strokes[index] = create("UIStroke", swatch, {Color = index == selectedIndex and theme.lime or theme.line, Thickness = index == selectedIndex and 2 or 1})
-        swatch.MouseEnter:Connect(function() tween(swatch, {Size = UDim2.fromOffset(25, 25)}) end)
-        swatch.MouseLeave:Connect(function() tween(swatch, {Size = UDim2.fromOffset(22, 22)}) end)
         swatch.Activated:Connect(function()
             selectedIndex = index
             selectedColor = color
@@ -4805,6 +5035,7 @@ function ControlsOverview.Build(parent, callbacks, options)
 
         if example.Type == "Button" then
             local action = makeButton(card, example.Text or "Click", 132)
+            bindButtonHover(action, theme)
             local initialText = action.Text
             action.Activated:Connect(function()
                 action.Text = "Clicked"
@@ -4840,17 +5071,19 @@ function ControlsOverview.Build(parent, callbacks, options)
             round(knob, 7)
             local hovered = false
             local function renderToggle()
-                local background = enabled and (hovered and theme.limeDark:Lerp(theme.lime, 0.2) or theme.limeDark)
-                    or (hovered and theme.hover or theme.control)
-                local knobSize = hovered and 15 or 14
-                tween(toggle, {BackgroundColor3 = background})
+                local trackColor = enabled and theme.limeDark or theme.control
+                if hovered then
+                    local hoverColor = enabled and theme.lime or (theme.hover or theme.control)
+                    trackColor = trackColor:Lerp(hoverColor, enabled and 0.12 or 0.35)
+                end
+                local knobSize = hovered and 16 or 14
+                tween(toggle, {BackgroundColor3 = trackColor})
                 tween(knob, {
                     Position = knobPosition(enabled, knobSize),
                     Size = UDim2.fromOffset(knobSize, knobSize),
                     BackgroundColor3 = enabled and theme.lime or theme.toggleKnob,
                 })
             end
-            table.insert(pageThemeRefreshers, renderToggle)
             toggle.MouseEnter:Connect(function()
                 hovered = true
                 renderToggle()
@@ -4859,6 +5092,7 @@ function ControlsOverview.Build(parent, callbacks, options)
                 hovered = false
                 renderToggle()
             end)
+            table.insert(pageThemeRefreshers, renderToggle)
             toggle.Activated:Connect(function()
                 enabled = not enabled
                 example.Value = enabled
@@ -4911,7 +5145,22 @@ function ControlsOverview.Build(parent, callbacks, options)
             local step = example.Step or 1
             local value = math.clamp(example.Value or minValue, minValue, maxValue)
             local dragging = false
-            local sliderHovered = false
+            local knobHovered = false
+            local function getKnobSize()
+                return knobHovered and not dragging and 15 or 12
+            end
+            local function renderKnobHover()
+                local size = getKnobSize()
+                tween(knob, {Size = UDim2.fromOffset(size, size)})
+            end
+            knob.MouseEnter:Connect(function()
+                knobHovered = true
+                renderKnobHover()
+            end)
+            knob.MouseLeave:Connect(function()
+                knobHovered = false
+                renderKnobHover()
+            end)
             local function renderSlider()
                 local alpha = math.clamp((value - minValue) / math.max(maxValue - minValue, 1), 0, 1)
                 fill.Size = UDim2.new(alpha, 0, 1, 0)
@@ -4920,11 +5169,12 @@ function ControlsOverview.Build(parent, callbacks, options)
                 example.Value = value
             end
             local function refreshSliderTheme()
-                tween(track, {BackgroundColor3 = sliderHovered and theme.hover or theme.control})
+                local knobSize = getKnobSize()
+                tween(track, {BackgroundColor3 = theme.control})
                 tween(fill, {BackgroundColor3 = theme.lime})
                 tween(knob, {
                     BackgroundColor3 = theme.lime,
-                    Size = UDim2.fromOffset(sliderHovered and 15 or 12, sliderHovered and 15 or 12),
+                    Size = UDim2.fromOffset(knobSize, knobSize),
                 })
                 valueLabel.TextColor3 = theme.text
             end
@@ -4937,19 +5187,10 @@ function ControlsOverview.Build(parent, callbacks, options)
                 value = math.clamp(minValue + math.floor((raw - minValue) / step + 0.5) * step, minValue, maxValue)
                 renderSlider()
             end
-            track.MouseEnter:Connect(function()
-                sliderHovered = true
-                tween(track, {BackgroundColor3 = theme.hover})
-                tween(knob, {Size = UDim2.fromOffset(15, 15)})
-            end)
-            track.MouseLeave:Connect(function()
-                sliderHovered = false
-                tween(track, {BackgroundColor3 = theme.control})
-                tween(knob, {Size = UDim2.fromOffset(12, 12)})
-            end)
             track.InputBegan:Connect(function(input)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                     dragging = true
+                    renderKnobHover()
                     setAt(input.Position.X)
                 end
             end)
@@ -4959,7 +5200,10 @@ function ControlsOverview.Build(parent, callbacks, options)
                 end
             end)
             UserInputService.InputEnded:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    dragging = false
+                    renderKnobHover()
+                end
             end)
             renderSlider()
         elseif example.Type == "Input" then
@@ -4979,14 +5223,25 @@ function ControlsOverview.Build(parent, callbacks, options)
                 TextXAlignment = Enum.TextXAlignment.Left,
             })
             round(input, 8)
+            local inputStroke = create("UIStroke", input, {
+                Color = theme.line,
+                Thickness = 1,
+                Transparency = 0.7,
+            })
+            input.Focused:Connect(function()
+                tween(input, {BackgroundColor3 = theme.hover or theme.control})
+                tween(inputStroke, {Color = theme.lime, Transparency = 0.18})
+            end)
             input.FocusLost:Connect(function()
+                tween(input, {BackgroundColor3 = theme.control})
+                tween(inputStroke, {Color = theme.line, Transparency = 0.7})
                 example.Value = input.Text
             end)
         elseif example.Type == "Dropdown" then
             local options = example.Options or {"Option 1"}
             if #options == 0 then options = {"Option 1"} end
             local index = table.find(options, example.Value) or 1
-            local dropdown = makeButton(card, "", 156, false)
+            local dropdown = makeButton(card, "", 156)
             dropdown.ZIndex = 21
             dropdown.TextXAlignment = Enum.TextXAlignment.Left
             create("UIPadding", dropdown, {PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 28)})
@@ -5027,7 +5282,7 @@ function ControlsOverview.Build(parent, callbacks, options)
                 dropdown.ZIndex = open and 21 or 1
                 if dropdownIcon then
                     dropdownIcon.ZIndex = dropdown.ZIndex + 1
-                    dropdownIcon.Rotation = open and 180 or 0
+                    tween(dropdownIcon, {Rotation = open and 180 or 0})
                 end
                 dropdown.Text = tostring(options[index])
                 if open then menu.CanvasPosition = Vector2.new(0, 0) end
@@ -5048,8 +5303,6 @@ function ControlsOverview.Build(parent, callbacks, options)
                     ZIndex = 23,
                 })
                 round(optionButton, 6)
-                optionButton.MouseEnter:Connect(function() tween(optionButton, {BackgroundColor3 = theme.hover}) end)
-                optionButton.MouseLeave:Connect(function() tween(optionButton, {BackgroundColor3 = theme.control}) end)
                 optionButton.Activated:Connect(function()
                     index = optionIndex
                     example.Value = option
@@ -5075,9 +5328,7 @@ function ControlsOverview.Build(parent, callbacks, options)
         elseif example.Type == "Keybind" then
             local key = example.Value or Enum.KeyCode.F
             local waiting = false
-            local keyButton = makeButton(card, key.Name, 110, false)
-            keyButton.MouseEnter:Connect(function() tween(keyButton, {BackgroundColor3 = waiting and theme.limeDark or theme.hover}) end)
-            keyButton.MouseLeave:Connect(function() tween(keyButton, {BackgroundColor3 = waiting and theme.limeDark or theme.control}) end)
+            local keyButton = makeButton(card, key.Name, 110)
             keyButton.Activated:Connect(function()
                 waiting = true
                 keyButton.Text = "Press a key"
@@ -5101,7 +5352,8 @@ function ControlsOverview.Build(parent, callbacks, options)
         elseif example.Type == "ColorPicker" then
             local colors = example.Colors or defaultColors(theme)
             local selectedColor = typeof(example.Value) == "Color3" and example.Value or colors[1]
-            local picker = makeButton(card, "Choose", 132, true)
+            local picker = makeButton(card, "Choose", 132)
+            bindButtonHover(picker, theme)
             picker.TextXAlignment = Enum.TextXAlignment.Left
             create("UIPadding", picker, {PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 38)})
             local previewChip = create("Frame", picker, {
@@ -5149,14 +5401,14 @@ function ControlsOverview.Build(parent, callbacks, options)
                 })
                 round(swatch, 6)
                 strokes[index] = create("UIStroke", swatch, {Color = theme.line, Thickness = 1})
-                swatch.MouseEnter:Connect(function() tween(swatch, {Size = UDim2.fromOffset(25, 25)}) end)
-                swatch.MouseLeave:Connect(function() tween(swatch, {Size = UDim2.fromOffset(22, 22)}) end)
                 swatch.Activated:Connect(function()
                     selected = index
                     example.Value = color
                     for i, outline in ipairs(strokes) do
-                        outline.Color = i == selected and theme.lime or theme.line
-                        outline.Thickness = i == selected and 2 or 1
+                        tween(outline, {
+                            Color = i == selected and theme.lime or theme.line,
+                            Thickness = i == selected and 2 or 1,
+                        })
                     end
                 end)
             end
