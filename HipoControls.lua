@@ -5989,5 +5989,23 @@ sessionShutdown.OnInvoke = shutdownCurrentSession
 -- local itemOptions = items:Section("Options", "package")
 -- itemOptions:Dropdown({Text = "Trier par", Options = {"Nom", "Rareté"}})
 
+-- API utilisable après le chargement du script Raw.
+local HipoControls = {}
+
+function HipoControls:AddSidebarTab(name, iconName)
+	return addSidebarTab(name, iconName)
+end
+
+-- Alias en appel pointé : HipoControls.addSidebarTab("Nom", "icon")
+HipoControls.addSidebarTab = function(name, iconName)
+	return addSidebarTab(name, iconName)
+end
+
+function HipoControls:Destroy()
+	shutdownCurrentSession()
+end
+
 applyTheme("Dark")
 setUIVisible(true)
+
+return HipoControls
